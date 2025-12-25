@@ -1,6 +1,6 @@
 import React from 'react';
-import { Icons } from './Icons.js';
-import { RoomState, api } from '../api.js';
+import { Icons } from './Icons';
+import { RoomState, api } from '../lib/api';
 
 interface PlayerProps {
   state: RoomState;

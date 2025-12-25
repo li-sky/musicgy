@@ -1,6 +1,6 @@
 import React from 'react';
-import { Icons } from './Icons.js';
-import { Song, api } from '../api.js';
+import { Icons } from './Icons';
+import { Song, api } from '../lib/api';
 
 export const Queue = ({ queue, onOpenSearch }: { queue: Song[], onOpenSearch: () => void }) => (
   <div className="w-full md:w-96 bg-slate-900/50 backdrop-blur-xl border-l border-white/5 flex flex-col z-20 h-64 md:h-auto">

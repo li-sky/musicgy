@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Icons } from './Icons.js';
-import { api, Song } from '../api.js';
+import { Icons } from './Icons';
+import { api, Song } from '../lib/api';
 
 export const SearchModal = ({ isOpen, onClose, onAdd, userId }: { isOpen: boolean, onClose: () => void, onAdd: (id: number, uid: string) => void, userId: string }) => {
   const [query, setQuery] = useState('');
