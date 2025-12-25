@@ -1,4 +1,4 @@
-import { neteaseService } from './netease.js';
+import { neteaseService } from './netease';
 
 interface Song {
   id: number;
