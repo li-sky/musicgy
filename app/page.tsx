@@ -1,10 +1,12 @@
+'use client'
+
 import React, { useState, useEffect, useRef } from 'react';
-import { api, RoomState, UserProfile } from './api.js';
-import { Player } from './components/Player.js';
-import { Queue } from './components/Queue.js';
-import { SearchModal } from './components/SearchModal.js';
-import { LoginModal } from './components/LoginModal.js';
-import { Icons } from './components/Icons.js';
+import { api, RoomState, UserProfile } from '../lib/api';
+import { Player } from '../components/Player';
+import { Queue } from '../components/Queue';
+import { SearchModal } from '../components/SearchModal';
+import { LoginModal } from '../components/LoginModal';
+import { Icons } from '../components/Icons';
 
 function generateUUID(): string {
   // Generate a simple UUID-like string
@@ -15,7 +17,7 @@ function generateUUID(): string {
   });
 }
 
-export const App = () => {
+export default function Home() {
   const [userId] = useState(() => generateUUID());
   const [userName] = useState(() => `User-${Math.random().toString(36).substr(2, 4)}`); // Simple display name
   const [state, setState] = useState<RoomState | null>(null);
@@ -241,4 +243,4 @@ export const App = () => {
       <audio ref={audioRef} className="hidden" crossOrigin="anonymous" />
     </div>
   );
-};
+}

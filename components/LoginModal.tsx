@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { api, UserProfile } from '../api.js';
+import { api, UserProfile } from '../lib/api';
 
 export const LoginModal = ({ isOpen, onClose, onLoginSuccess }: { isOpen: boolean, onClose: () => void, onLoginSuccess: (p: UserProfile) => void }) => {
     const [step, setStep] = useState<'loading' | 'qr' | 'success'>('loading');
