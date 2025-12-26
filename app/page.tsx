@@ -62,6 +62,40 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [hasStarted, userId, profile?.nickname, userName, connectionId]);
 
+  // Client-side Pre-fetching (First 1MB only)
+  useEffect(() => {
+    if (!state?.queue || state.queue.length === 0 || !hasStarted) return;
+    
+    const nextSongId = state.queue[0].id;
+    const cacheKey = `prefetch_done_${nextSongId}`;
+    
+    if (sessionStorage.getItem(cacheKey)) return;
+
+    const performPrefetch = async () => {
+       console.log(`[Client Preload] Warming up cache for: ${nextSongId} (First 1MB)`);
+       try {
+          const url = api.getStreamUrl(nextSongId);
+          const res = await fetch(url, {
+             headers: { 'Range': 'bytes=0-1048575' }
+          });
+          
+          if (res.ok && res.body) {
+             const reader = res.body.getReader();
+             while (true) {
+                const { done } = await reader.read();
+                if (done) break;
+             }
+             sessionStorage.setItem(cacheKey, 'true');
+             console.log(`[Client Preload] Finished warming up ${nextSongId}`);
+          }
+       } catch (e) {
+          console.warn(`[Client Preload] Failed to prefetch ${nextSongId}`, e);
+       }
+    };
+
+    performPrefetch();
+  }, [state?.queue?.[0]?.id, hasStarted]);
+
   useEffect(() => {
     (async () => {
       try {
