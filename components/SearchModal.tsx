@@ -21,24 +21,38 @@ export const SearchModal = ({ isOpen, onClose, onAdd, userId }: { isOpen: boolea
   const [stack, setStack] = useState<ViewState[]>([]);
   const [loading, setLoading] = useState(false);
   const [addingId, setAddingId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<'default' | 'name' | 'time'>('default');
   const [filterText, setFilterText] = useState('');
 
+  const loaderRef = useRef<HTMLDivElement>(null);
   const currentView = stack[stack.length - 1];
+
+  // Infinite Scroll Observer
+  useEffect(() => {
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting && !loading && currentView?.hasMore && !filterText && currentView.type !== 'album') {
+        loadMore();
+      }
+    }, { threshold: 0.1 });
+
+    if (loaderRef.current) {
+      observer.observe(loaderRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [loading, currentView?.hasMore, filterText, currentView?.offset]);
 
   useEffect(() => {
     if (isOpen) {
-      // Initialize with empty search view if stack is empty
       if (stack.length === 0) {
         setStack([{ type: 'search', title: 'Search', data: [], offset: 0, hasMore: true, query: '', searchType: 1 }]);
       }
     } else {
-      // Reset logic could go here, but maybe user wants to keep state? 
-      // User requests usually imply fresh state on open, or persistence. 
-      // Let's reset for consistency with previous behavior.
       setQuery('');
       setStack([]);
       setFilterText('');
+      setError(null);
     }
   }, [isOpen]);
 
@@ -49,6 +63,7 @@ export const SearchModal = ({ isOpen, onClose, onAdd, userId }: { isOpen: boolea
     
     setLoading(true);
     setSortOrder('default');
+    setError(null);
     try {
       const results = await api.search(query, typeToUse, 20, 0);
       setStack([{ 
@@ -62,6 +77,7 @@ export const SearchModal = ({ isOpen, onClose, onAdd, userId }: { isOpen: boolea
       }]);
     } catch (err) {
       console.error(err);
+      setError("Search failed. Please try again.");
     }
     setLoading(false);
   };
@@ -78,7 +94,6 @@ export const SearchModal = ({ isOpen, onClose, onAdd, userId }: { isOpen: boolea
       } else if (currentView.type === 'artist' && currentView.context) {
         newResults = await api.browse('artist', currentView.context.id, limit, currentView.offset);
       }
-      // Album view usually returns all songs at once, so no pagination needed usually.
       
       if (newResults.length > 0) {
         const updatedView = {
@@ -99,9 +114,10 @@ export const SearchModal = ({ isOpen, onClose, onAdd, userId }: { isOpen: boolea
   };
 
   const handleItemClick = async (item: SearchResult) => {
-    if (item.type === 'artist') {
-      setLoading(true);
-      try {
+    setLoading(true);
+    setError(null);
+    try {
+      if (item.type === 'artist') {
         const albums = await api.browse('artist', item.id);
         setStack(prev => [...prev, {
           type: 'artist',
@@ -111,13 +127,8 @@ export const SearchModal = ({ isOpen, onClose, onAdd, userId }: { isOpen: boolea
           offset: 20,
           hasMore: albums.length === 20
         }]);
-      } catch (e) { console.error(e); }
-      setLoading(false);
-    } else if (item.type === 'album') {
-       setLoading(true);
-      try {
+      } else if (item.type === 'album') {
         const result = await api.browse('album', item.id);
-        // Result is { album: Album, songs: Song[] }
         setStack(prev => [...prev, {
           type: 'album',
           title: result.album.name,
@@ -126,40 +137,37 @@ export const SearchModal = ({ isOpen, onClose, onAdd, userId }: { isOpen: boolea
           offset: 0,
           hasMore: false
         }]);
-      } catch (e) { console.error(e); }
-      setLoading(false);
+      }
+    } catch (e) { 
+      console.error(e);
+      setError("Failed to load details.");
     }
-    // Songs are handled by add button
+    setLoading(false);
   };
 
   const goBack = () => {
     if (stack.length > 1) {
       setStack(prev => prev.slice(0, -1));
+      setError(null);
     }
   };
 
   const getFilteredAndSortedData = () => {
     if (!currentView) return [];
     let data = [...currentView.data];
-    
-    // Filter
     if (filterText) {
       const lower = filterText.toLowerCase();
       data = data.filter(item => item.name.toLowerCase().includes(lower));
     }
-
-    // Sort
     if (sortOrder === 'name') {
       data.sort((a, b) => a.name.localeCompare(b.name));
     } else if (sortOrder === 'time') {
-       // Only for songs or albums with publishTime
        data.sort((a, b) => {
          const timeA = a.publishTime || a.duration || 0;
          const timeB = b.publishTime || b.duration || 0;
-         return timeB - timeA; // Descending
+         return timeB - timeA;
        });
     }
-
     return data;
   };
 
@@ -167,13 +175,12 @@ export const SearchModal = ({ isOpen, onClose, onAdd, userId }: { isOpen: boolea
     const isSong = !item.type || item.type === 'song';
     return (
       <div 
-        key={item.id} 
+        key={`${item.type}-${item.id}`} 
         onClick={() => !isSong && handleItemClick(item)}
         className={`flex items-center gap-4 p-3 hover:bg-white/5 rounded-xl transition group ${!isSong ? 'cursor-pointer' : ''}`}
       >
         <div className="relative w-12 h-12 flex-shrink-0">
            <img src={item.cover} alt={item.name} className="w-full h-full rounded object-cover bg-slate-800" />
-           {/* Overlay Icon for containers */}
            {!isSong && (
              <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition">
                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -184,11 +191,9 @@ export const SearchModal = ({ isOpen, onClose, onAdd, userId }: { isOpen: boolea
         </div>
         
         <div className="flex-1 min-w-0 overflow-hidden">
-          <div className="marquee-container group-hover:bg-transparent"> 
-            <h3 className={`font-medium text-white truncate marquee-text ${item.name.length > 20 ? 'group-hover:animate-[marquee_5s_linear_infinite]' : ''}`}>
-               {item.name}
-            </h3>
-          </div>
+          <h3 className="font-medium text-white truncate">
+              {item.name}
+          </h3>
           <p className="text-sm text-slate-400 truncate">
             {item.artist || (item.type === 'artist' ? `Albums: ${item.albumSize}` : '')}
           </p>
@@ -200,11 +205,12 @@ export const SearchModal = ({ isOpen, onClose, onAdd, userId }: { isOpen: boolea
               e.stopPropagation();
               if (addingId !== null) return;
               setAddingId(item.id);
+              setError(null);
               try {
                 await onAdd(item.id, userId);
-                // Optional: Don't close, allow adding more
-              } catch (err) {
+              } catch (err: any) {
                 console.error("Failed to add song:", err);
+                setError(err.message || "Failed to add song. It might be unavailable.");
               } finally {
                 setAddingId(null);
               }
@@ -251,12 +257,19 @@ export const SearchModal = ({ isOpen, onClose, onAdd, userId }: { isOpen: boolea
           <button onClick={onClose} className="text-slate-400 hover:text-white transition p-2 hover:bg-white/10 rounded-full">✕</button>
         </div>
 
+        {/* Error Message */}
+        {error && (
+          <div className="bg-red-500/10 border-b border-red-500/20 px-4 py-2 text-red-400 text-sm flex justify-between items-center animate-in slide-in-from-top duration-300">
+             <span>{error}</span>
+             <button onClick={() => setError(null)}>✕</button>
+          </div>
+        )}
+
         {/* Content Container */}
         <div className="flex flex-1 overflow-hidden">
             
-            {/* Sidebar (Context Info) - Only if not root search */}
             {currentView?.type !== 'search' && currentView?.context && (
-                <div className="w-1/3 border-r border-white/10 p-6 flex flex-col items-center text-center bg-slate-900/30 overflow-y-auto">
+                <div className="w-1/3 border-r border-white/10 p-6 flex flex-col items-center text-center bg-slate-900/30 overflow-y-auto hidden md:flex">
                     <img src={currentView.context.cover} alt={currentView.context.name} className="w-48 h-48 rounded-xl shadow-2xl mb-4 object-cover" />
                     <h2 className="text-2xl font-bold text-white mb-2">{currentView.context.name}</h2>
                     {currentView.type === 'album' && (
@@ -267,17 +280,10 @@ export const SearchModal = ({ isOpen, onClose, onAdd, userId }: { isOpen: boolea
                              </p>
                         </>
                     )}
-                     {currentView.type === 'artist' && (
-                        <div className="mt-4 flex gap-2">
-                            <span className="px-3 py-1 rounded-full bg-white/10 text-sm text-slate-300">Artist</span>
-                        </div>
-                    )}
                 </div>
             )}
 
-            {/* Main List */}
             <div className="flex-1 flex flex-col min-w-0 bg-slate-900/20">
-                {/* Search Bar & Controls (Only show at root or if needed) */}
                 {stack.length === 1 && (
                     <div className="p-4 space-y-4 border-b border-white/5">
                         <form onSubmit={(e) => handleSearch(e)} className="relative">
@@ -314,7 +320,6 @@ export const SearchModal = ({ isOpen, onClose, onAdd, userId }: { isOpen: boolea
                     </div>
                 )}
 
-                {/* Filters & Sort (If data exists) */}
                 {currentView && currentView.data.length > 0 && (
                      <div className="px-4 py-2 border-b border-white/5 flex gap-4 items-center">
                          <div className="relative flex-1">
@@ -338,29 +343,23 @@ export const SearchModal = ({ isOpen, onClose, onAdd, userId }: { isOpen: boolea
                      </div>
                 )}
 
-                {/* Results List */}
                 <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
-                    {loading && stack.length === 1 && currentView?.data.length === 0 && (
+                    {loading && currentView?.data.length === 0 && (
                         <div className="text-center py-12 text-slate-400 animate-pulse">Searching...</div>
                     )}
                     
                     {getFilteredAndSortedData().map((item: any) => renderItem(item))}
                     
-                    {!loading && getFilteredAndSortedData().length === 0 && (
+                    {!loading && getFilteredAndSortedData().length === 0 && query && (
                         <div className="text-center py-12 text-slate-500">No results found</div>
                     )}
 
-                    {currentView?.hasMore && !filterText && (
-                        <div className="p-4 flex justify-center">
-                            <button 
-                                onClick={loadMore} 
-                                disabled={loading}
-                                className="text-sm text-purple-400 hover:text-purple-300 disabled:opacity-50"
-                            >
-                                {loading ? 'Loading...' : 'Load More'}
-                            </button>
-                        </div>
-                    )}
+                    {/* Infinite Scroll Sentinel */}
+                    <div ref={loaderRef} className="h-10 flex items-center justify-center">
+                        {loading && currentView?.data.length > 0 && (
+                            <div className="w-5 h-5 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>

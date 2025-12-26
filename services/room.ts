@@ -183,6 +183,11 @@ export const roomService = {
   async addToQueue(songId: number, userId: string) {
     const details = await neteaseService.getSongDetail(songId);
     if (!details) throw new Error("Song not found");
+    
+    // Validate availability before adding
+    const isAvail = await neteaseService.isAvailable(songId);
+    if (!isAvail) throw new Error("This song is currently unavailable (no copyright or unblock failed)");
+
     await redis.rpush(K.QUEUE, JSON.stringify({ ...details, addedBy: userId }));
     this.checkAutoPlay().catch(console.error);
   },

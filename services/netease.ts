@@ -122,13 +122,11 @@ export const neteaseService = {
     let data = res.body?.data?.[0];
     
     // Check if blocked or trial
-    // freeTrialInfo populates if user doesn't have rights to full song
     if (!data?.url || data?.freeTrialInfo) {
        console.log(`[Netease] Song ${id} blocked/trial. Attempting unblock...`);
        try {
+           // song_url_match can throw SyntaxError if upstream returns HTML or times out
            const matchRes = await song_url_match({ id, cookie } as any) as any;
-           // song_url_match returns a similar structure or just payload data depending on version
-           // Let's inspect typical unblock response
            const matchData = matchRes.body?.data?.[0] || matchRes.body?.data;
            
            if (matchData?.url) {
@@ -142,12 +140,12 @@ export const neteaseService = {
                };
            }
        } catch (e) {
-           console.error(`[Netease] Unblock failed for ${id}`, e);
+           console.error(`[Netease] Unblock failed for ${id} due to upstream error`);
        }
     }
 
     const url = data?.url || res.body?.url;
-    if (!url) return null;
+    if (!url || url.includes('music.163.com/404')) return null;
 
     return {
       url,
@@ -156,6 +154,15 @@ export const neteaseService = {
       level: data?.level || 'standard',
       br: data?.br || 0
     };
+  },
+
+  async isAvailable(id: number) {
+    try {
+      const info = await this.getSongUrl(id);
+      return !!info?.url;
+    } catch {
+      return false;
+    }
   },
 
   async downloadAndCacheSong(id: number) {
