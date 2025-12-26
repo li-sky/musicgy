@@ -84,41 +84,49 @@ export default function Home() {
 
   // Client-side Pre-fetching (First 1MB only)
   useEffect(() => {
-    if (!state?.queue || state.queue.length === 0 || !hasStarted) return;
+    if (!state?.queue || state.queue.length === 0) return;
     
-    const nextSongId = state.queue[0].id;
+    const nextSong = state.queue[0];
+    const nextSongId = nextSong.id;
     const cacheKey = `prefetch_done_${nextSongId}`;
     
     if (sessionStorage.getItem(cacheKey)) return;
 
     const performPrefetch = async () => {
-       console.log(`[Client Preload] Warming up cache for: ${nextSongId} (First 1MB)`);
        try {
-          const url = api.getStreamUrl(nextSongId);
+          // 增加 _t 参数强制在 Network 面板显示，避免被浏览器静默合并
+          const url = api.getStreamUrl(nextSongId) + `&_prefetch=1&t=${Date.now()}`;
+          console.log(`[Client Preload] Starting fetch for: ${nextSong.name}, URL: ${url}`);
+          
           const res = await fetch(url, {
-             headers: { 'Range': 'bytes=0-1048575' }
+             headers: { 'Range': 'bytes=0-1048575' },
+             cache: 'no-cache'
           });
           
           if (res.ok && res.body) {
              const reader = res.body.getReader();
+             let totalRead = 0;
              try {
                 while (true) {
-                   const { done } = await reader.read();
+                   const { done, value } = await reader.read();
                    if (done) break;
+                   totalRead += value?.length || 0;
                 }
                 sessionStorage.setItem(cacheKey, 'true');
-                console.log(`[Client Preload] Finished warming up ${nextSongId}`);
+                console.log(`[Client Preload] Success! Prefetched ${totalRead} bytes for ${nextSong.name}`);
              } finally {
                 reader.releaseLock();
              }
+          } else {
+             console.warn(`[Client Preload] Failed with status: ${res.status}`);
           }
        } catch (e) {
-          console.warn(`[Client Preload] Failed to prefetch ${nextSongId}`, e);
+          console.warn(`[Client Preload] Error prefetching ${nextSongId}`, e);
        }
     };
 
     performPrefetch();
-  }, [state?.queue?.[0]?.id, hasStarted]);
+  }, [state?.queue?.[0]?.id, !!state]);
 
   useEffect(() => {
     (async () => {

@@ -44,7 +44,9 @@ export async function GET(request: NextRequest) {
             const headers: Record<string, string> = {
                 'Content-Type': contentType,
                 'Accept-Ranges': 'bytes',
-                'Content-Length': fileSize.toString()
+                'Content-Length': fileSize.toString(),
+                'Cache-Control': 'public, max-age=31536000, immutable',
+                'ETag': `W/"audio-${id}"`
             };
 
             if (rangeHeader) {
