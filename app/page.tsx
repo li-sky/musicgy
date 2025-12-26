@@ -149,11 +149,6 @@ export default function Home() {
           audio.currentTime = expectedTime;
           audio.playbackRate = 1.0;
           setTimeout(() => setIsAudioSyncing(false), 100);
-        } else if (drift > 0.5) {
-          const rate = currentTime < expectedTime ? 1.05 : 0.95;
-          audio.playbackRate = rate;
-        } else {
-          if (audio.playbackRate !== 1.0) audio.playbackRate = 1.0;
         }
         
         if (hasStarted && audio.paused && !audio.ended) audio.play().catch(() => {});
