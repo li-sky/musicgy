@@ -113,7 +113,7 @@ export const roomService = {
       const song = JSON.parse(currentStr);
       const startTime = parseInt(startTimeStr || '0');
       const elapsed = (Date.now() - startTime) / 1000;
-      if (elapsed > song.duration + 2) {
+      if (elapsed > song.duration) {
         await this.playNext();
       }
     } else if (queueLen > 0) {
