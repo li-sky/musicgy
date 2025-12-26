@@ -1,25 +1,21 @@
-const CACHE_NAME = 'musicgy-audio-v2';
+const CACHE_NAME = 'musicgy-audio-v3';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
-  console.log('[SW] Installed');
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(clients.claim());
-  console.log('[SW] Activated');
 });
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Handle Music Stream specifically
   if (url.pathname === '/api/stream') {
     event.respondWith(handleAudioRequest(event));
     return;
   }
 
-  // Handle static assets
   if (!url.pathname.startsWith('/api/')) {
     event.respondWith(
       caches.match(event.request).then((response) => {
@@ -33,36 +29,41 @@ async function handleAudioRequest(event) {
   const url = new URL(event.request.url);
   const songId = url.searchParams.get('id');
   const isPrefetch = url.searchParams.has('prefetch');
-  
-  // Use a stable key without query params for caching the blob
   const cacheKey = `audio-data-${songId}`;
   const cache = await caches.open(CACHE_NAME);
   
   const cachedRes = await cache.match(cacheKey);
   if (cachedRes) {
-    // console.log(`[SW] Cache Hit: ${songId}`);
+    // If we have it in cache, handle Range requests locally for instant seeking
     return handleRangeRequest(event.request, cachedRes);
   }
 
-  // console.log(`[SW] Network Fetch: ${songId} (Prefetch: ${isPrefetch})`);
-  
-  try {
-    // For audio, we always fetch without range first if we want to cache the whole thing,
-    // but the browser might send a Range request. 
-    // If it's a prefetch signal, we force a full download.
-    const fetchRequest = isPrefetch ? new Request(url.origin + url.pathname + '?id=' + songId) : event.request;
-    
-    const response = await fetch(fetchRequest);
-    
-    if (response.ok && (response.status === 200)) {
-      const copy = response.clone();
-      cache.put(cacheKey, copy).catch(err => console.error('[SW] Cache put error', err));
-    }
-    
-    return handleRangeRequest(event.request, response);
-  } catch (e) {
-    return fetch(event.request); // Fallback
+  // If not in cache and it's a prefetch, download fully in background
+  if (isPrefetch) {
+    const fetchUrl = url.origin + url.pathname + '?id=' + songId;
+    fetch(fetchUrl).then(response => {
+      if (response.ok && response.status === 200) {
+        cache.put(cacheKey, response);
+      }
+    }).catch(() => {});
+    return new Response(null, { status: 204 });
   }
+
+  // CRITICAL FIX: For real-time playback (especially mid-song join), 
+  // do NOT use blob() or arrayBuffer() as it waits for the full download.
+  // Instead, fetch directly from network and let the browser handle ranges.
+  
+  // We can also trigger a background cache for NEXT time
+  const backgroundFetchUrl = url.origin + url.pathname + '?id=' + songId;
+  cache.match(cacheKey).then(res => {
+      if (!res) {
+          fetch(backgroundFetchUrl).then(response => {
+              if (response.ok && response.status === 200) cache.put(cacheKey, response);
+          }).catch(() => {});
+      }
+  });
+
+  return fetch(event.request);
 }
 
 async function handleRangeRequest(request, response) {
@@ -71,6 +72,7 @@ async function handleRangeRequest(request, response) {
     return response;
   }
 
+  // This part is only reached if the item is FULLY in cache
   const blob = await response.blob();
   const bytes = /^bytes=(\d+)-(\d+)?$/g.exec(rangeHeader);
   
