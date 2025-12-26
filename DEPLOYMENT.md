@@ -323,6 +323,84 @@ bun run start
 
 ---
 
+## Serverless 环境下的 Redis 搭建指南
+
+为了让 Redis 服务能够安全、高效地配合 Serverless (如 Vercel, AWS Lambda) 环境工作，建议采用以下方案。
+
+### 1. 架构方案
+使用 **Docker + Redis 7 + 强密码验证 + 安全组防火墙限制**。
+
+### 2. 服务器配置步骤
+
+#### A. 准备配置文件
+在服务器创建 `/opt/redis/redis.conf`:
+```conf
+# 基础安全
+bind 0.0.0.0
+protected-mode yes
+port 6379
+
+# 核心：设置强密码 (必填)
+requirepass "你的强密码_使用_openssl_rand_hex_32_生成"
+
+# Serverless 优化：主动释放闲置连接
+# 设置 60 秒超时，防止 Serverless 函数执行完毕后残留大量死连接
+timeout 60
+tcp-keepalive 300
+
+# 内存与持久化
+maxmemory 512mb
+maxmemory-policy allkeys-lru
+appendonly yes
+```
+
+#### B. 使用 Docker Compose 启动
+创建 `docker-compose.yml`:
+```yaml
+version: '3.8'
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: musicgy-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - /opt/redis/redis.conf:/usr/local/etc/redis/redis.conf
+      - /opt/redis/data:/data
+    command: redis-server /usr/local/etc/redis/redis.conf
+```
+启动命令: `docker-compose up -d`
+
+### 3. 安全策略 (至关重要)
+
+1. **安全组限制**: 在云服务商后台，不要对 `0.0.0.0/0` 开放 6379。如果无法获取 Serverless 服务的固定 IP，请确保密码极度复杂。
+2. **TLS 加密 (可选)**: 如果数据极其敏感，建议配置 Stunnel 或 Redis 自带的 TLS 支持。
+
+### 4. 代码层优化 (`lib/redis.ts`)
+
+在 Serverless 中，为了防止热重载或高并发产生过多连接，请使用单例模式：
+
+```typescript
+import Redis from 'ioredis';
+
+const globalForRedis = global as unknown as { redis: Redis };
+
+const redis = globalForRedis.redis || new Redis(process.env.REDIS_URL!, {
+  maxRetriesPerRequest: 1,
+  connectTimeout: 10000,
+});
+
+if (process.env.NODE_ENV !== 'production') globalForRedis.redis = redis;
+
+export default redis;
+```
+
+### 5. 连接字符串格式
+`REDIS_URL=redis://:密码@服务器公网IP:6379`
+
+---
+
 ## 性能建议
 
 ### 1. 服务器配置
