@@ -5,6 +5,7 @@ import redis from '@/lib/redis';
 import { storageService } from './storage';
 
 const COOKIE_KEY = 'netease:cookie';
+const downloadTasks = new Map<number, Promise<boolean>>();
 
 export const neteaseService = {
   async setCookie(cookie: string) {
@@ -159,27 +160,38 @@ export const neteaseService = {
 
   async downloadAndCacheSong(id: number) {
     if (storageService.exists(id)) return true;
+    
+    // Check if there's already a task for this ID
+    const existingTask = downloadTasks.get(id);
+    if (existingTask) return existingTask;
 
-    try {
-      const info = await this.getSongUrl(id);
-      if (!info?.url) return false;
+    const task = (async () => {
+      try {
+        const info = await this.getSongUrl(id);
+        if (!info?.url) return false;
 
-      const headers: any = {
-        'Referer': 'https://music.163.com/',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      };
+        const headers: any = {
+          'Referer': 'https://music.163.com/',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        };
 
-      const res = await fetch(info.url, { headers });
-      if (!res.ok || !res.body) return false;
+        const res = await fetch(info.url, { headers });
+        if (!res.ok || !res.body) return false;
 
-      const contentType = res.headers.get('content-type') || 'audio/mpeg';
-      await storageService.save(id, res.body, contentType);
-      console.log(`[Netease] Cached song ${id} (${contentType})`);
-      return true;
-    } catch (e) {
-      console.error(`[Netease] Failed to cache song ${id}`, e);
-      return false;
-    }
+        const contentType = res.headers.get('content-type') || 'audio/mpeg';
+        await storageService.save(id, res.body, contentType);
+        console.log(`[Netease] Cached song ${id} (${contentType})`);
+        return true;
+      } catch (e) {
+        console.error(`[Netease] Failed to cache song ${id}`, e);
+        return false;
+      } finally {
+        downloadTasks.delete(id);
+      }
+    })();
+
+    downloadTasks.set(id, task);
+    return task;
   },
 
   async getCoverUrl(id: number) {

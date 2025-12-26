@@ -81,12 +81,16 @@ export default function Home() {
           
           if (res.ok && res.body) {
              const reader = res.body.getReader();
-             while (true) {
-                const { done } = await reader.read();
-                if (done) break;
+             try {
+                while (true) {
+                   const { done } = await reader.read();
+                   if (done) break;
+                }
+                sessionStorage.setItem(cacheKey, 'true');
+                console.log(`[Client Preload] Finished warming up ${nextSongId}`);
+             } finally {
+                reader.releaseLock();
              }
-             sessionStorage.setItem(cacheKey, 'true');
-             console.log(`[Client Preload] Finished warming up ${nextSongId}`);
           }
        } catch (e) {
           console.warn(`[Client Preload] Failed to prefetch ${nextSongId}`, e);

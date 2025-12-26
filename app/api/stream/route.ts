@@ -67,11 +67,23 @@ export async function GET(request: NextRequest) {
             const fileStream = storageService.getReadStream(id, { start, end });
             if (!fileStream) return NextResponse.json({ error: 'Read error' }, { status: 500 });
 
-            // Convert Node stream to Web stream for NextResponse
-            // @ts-ignore
-            const webStream = Readable.toWeb(fileStream);
+            // Convert Node stream to Web stream safely
+            const webStream = new ReadableStream({
+                start(controller) {
+                    fileStream.on('data', (chunk) => controller.enqueue(new Uint8Array(chunk)));
+                    fileStream.on('end', () => {
+                        try { controller.close(); } catch (e) {}
+                    });
+                    fileStream.on('error', (err) => {
+                        try { controller.error(err); } catch (e) {}
+                    });
+                },
+                cancel() {
+                    fileStream.destroy();
+                }
+            });
             
-            return new NextResponse(webStream as any, { status, headers });
+            return new NextResponse(webStream, { status, headers });
         }
     }
     // ---------------------------------------

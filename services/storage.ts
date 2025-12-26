@@ -68,25 +68,57 @@ export const storageService = {
     const m = this.getMetadataPath(songId);
     if (!p || !m) return;
 
-    const tempPath = `${p}.tmp`;
-    const fileStream = fs.createWriteStream(tempPath);
-
+    const tempPath = `${p}.${Math.random().toString(36).substring(7)}.tmp`;
+    
     try {
-        if (stream instanceof Readable) {
-             await pipeline(stream, fileStream);
+        // Use Bun.write if available for maximum performance and stability with Web Streams
+        // @ts-ignore
+        if (typeof Bun !== 'undefined') {
+            // @ts-ignore
+            await Bun.write(tempPath, stream);
         } else {
-             // @ts-ignore
-             await pipeline(Readable.fromWeb(stream), fileStream);
+            // Fallback for Node.js
+            const fileStream = fs.createWriteStream(tempPath);
+            if (stream instanceof Readable) {
+                await pipeline(stream, fileStream);
+            } else {
+                // @ts-ignore
+                await pipeline(Readable.fromWeb(stream), fileStream);
+            }
         }
         
+        if (!fs.existsSync(tempPath)) {
+            throw new Error(`Temp file ${tempPath} not found after write`);
+        }
+
         const size = (await fs.promises.stat(tempPath)).size;
+        
+        // Double check if target already exists (another task might have finished)
+        if (fs.existsSync(p)) {
+            await fs.promises.unlink(tempPath).catch(() => {});
+            return;
+        }
+
         await fs.promises.rename(tempPath, p);
         
         // Save metadata
         await fs.promises.writeFile(m, JSON.stringify({ contentType, size }));
-    } catch (e) {
+    } catch (e: any) {
+        // Ignore "Controller is already closed" as it usually means the stream finished 
+        // but the polyfill tried to close it again.
+        if (e?.message?.includes('already closed')) {
+            if (fs.existsSync(tempPath)) {
+                const size = (await fs.promises.stat(tempPath)).size;
+                if (size > 0) {
+                   await fs.promises.rename(tempPath, p);
+                   await fs.promises.writeFile(m, JSON.stringify({ contentType, size }));
+                   return;
+                }
+            }
+        }
+        
         console.error(`Failed to save song ${songId}:`, e);
-        if (fs.existsSync(tempPath)) await fs.promises.unlink(tempPath);
+        if (fs.existsSync(tempPath)) await fs.promises.unlink(tempPath).catch(() => {});
         throw e;
     }
   }
