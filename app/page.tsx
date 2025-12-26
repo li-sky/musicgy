@@ -246,7 +246,13 @@ export default function Home() {
 
   const handleStartListening = async () => {
     setHasStarted(true);
-    if (audioRef.current) audioRef.current.play().catch(() => {});
+    // Explicitly check for SW and try to activate if not controlled
+    if ('serviceWorker' in navigator && !navigator.serviceWorker.controller) {
+        navigator.serviceWorker.ready.then(reg => {
+            reg.active?.postMessage({ type: 'SKIP_WAITING' });
+        });
+    }
+
     try {
         await api.joinRoom(userId, profile?.nickname || userName, connectionId);
     } catch (e) {
