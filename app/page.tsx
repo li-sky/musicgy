@@ -69,50 +69,38 @@ export default function Home() {
     fetchState();
     const interval = setInterval(fetchState, 3000);
     return () => clearInterval(interval);
-  }, [hasStarted, userId, profile?.nickname, userName, connectionId]);
+  }, [hasStarted, userId, connectionId]);
 
-  // Client-side Pre-fetching (First 1MB only)
+  // Client-side Pre-fetching via Service Worker
   useEffect(() => {
     if (!state?.queue || state.queue.length === 0) return;
     
     const nextSong = state.queue[0];
     const nextSongId = nextSong.id;
-    const cacheKey = `prefetch_done_${nextSongId}`;
+    const cacheKey = `sw_prefetch_${nextSongId}`;
     
     if (sessionStorage.getItem(cacheKey)) return;
 
     const performPrefetch = async () => {
        try {
-          // URL 必须完全一致才能命中缓存
-          const url = api.getStreamUrl(nextSongId);
-          console.log(`[Client Preload] Warmup: ${nextSong.name}`);
+          // 只需发起一个带有 prefetch=true 的请求
+          // SW 会识别该参数并完整下载歌曲存入 Cache Storage
+          const url = api.getStreamUrl(nextSongId) + '&prefetch=true';
+          console.log(`[Client] Prefetching ${nextSong.name} via Service Worker...`);
           
-          const res = await fetch(url, {
-             headers: { 'Range': 'bytes=0-1048575' }
-          });
-          
-          if (res.ok && res.body) {
-             const reader = res.body.getReader();
-             let totalRead = 0;
-             try {
-                while (true) {
-                   const { done, value } = await reader.read();
-                   if (done) break;
-                   totalRead += value?.length || 0;
-                }
-                sessionStorage.setItem(cacheKey, 'true');
-                console.log(`[Client Preload] Cached ${totalRead} bytes for ${nextSong.name}`);
-             } finally {
-                reader.releaseLock();
-             }
-          }
+          fetch(url).then(res => {
+              if (res.ok) {
+                  sessionStorage.setItem(cacheKey, 'true');
+                  console.log(`[Client] Prefetch signal sent for ${nextSong.name}`);
+              }
+          }).catch(() => {});
        } catch (e) {
-          console.warn(`[Client Preload] Error ${nextSongId}`, e);
+          console.warn(`[Client] Prefetch error ${nextSongId}`, e);
        }
     };
 
     performPrefetch();
-  }, [state?.queue?.[0]?.id, !!state]);
+  }, [state?.queue?.[0]?.id]);
 
   useEffect(() => {
     (async () => {
