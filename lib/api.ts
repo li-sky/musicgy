@@ -7,6 +7,34 @@ export interface Song {
   cover: string;
   duration: number;
   addedBy: string;
+  type?: 'song';
+}
+
+export interface Artist {
+  id: number;
+  name: string;
+  cover: string;
+  albumSize: number;
+  type: 'artist';
+}
+
+export interface Album {
+  id: number;
+  name: string;
+  artist: string;
+  cover: string;
+  publishTime: number;
+  size: number;
+  type: 'album';
+  description?: string;
+}
+
+export type SearchResult = Song | Artist | Album;
+
+export interface UserPresence {
+  userId: string;
+  nickname?: string;
+  emailHash?: string;
 }
 
 export interface RoomState {
@@ -16,8 +44,9 @@ export interface RoomState {
   isPlaying: boolean;
   votes: number;
   requiredVotes: number;
-  activeUsers: string[];
+  activeUsers: UserPresence[];
   serverTime?: number; // Added for better sync
+  neteaseStatus?: any;
 }
 
 export interface UserProfile {
@@ -29,33 +58,55 @@ export interface UserProfile {
 const API_BASE = '/api';
 
 export const api = {
-  async getState(): Promise<RoomState> {
-    const res = await fetch(`${API_BASE}/state`);
+  async getState(userId?: string): Promise<RoomState> {
+    const url = userId ? `${API_BASE}/state?userId=${encodeURIComponent(userId)}` : `${API_BASE}/state`;
+    const res = await fetch(url);
     if (!res.ok) throw new Error(`API Error: ${res.status}`);
     return res.json();
   },
 
-  async search(query: string): Promise<Song[]> {
-    const res = await fetch(`${API_BASE}/search?q=${encodeURIComponent(query)}`);
+  async search(query: string, type: number = 1, limit: number = 20, offset: number = 0): Promise<SearchResult[]> {
+    const params = new URLSearchParams({
+      q: query,
+      type: type.toString(),
+      limit: limit.toString(),
+      offset: offset.toString()
+    });
+    const res = await fetch(`${API_BASE}/search?${params.toString()}`);
     if (!res.ok) throw new Error('Search failed');
     const data = await res.json();
-    return data.songs;
+    return data.results || data.songs || [];
+  },
+
+  async browse(type: 'artist' | 'album', id: number, limit: number = 20, offset: number = 0): Promise<any> {
+    const params = new URLSearchParams({
+      type,
+      id: id.toString(),
+      limit: limit.toString(),
+      offset: offset.toString()
+    });
+    const res = await fetch(`${API_BASE}/browse?${params.toString()}`);
+    if (!res.ok) throw new Error('Browse failed');
+    const data = await res.json();
+    return data.results;
   },
 
   async addToQueue(songId: number, userId: string): Promise<void> {
-    await fetch(`${API_BASE}/queue`, {
+    const res = await fetch(`${API_BASE}/queue`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ songId, userId })
     });
+    if (!res.ok) throw new Error('Failed to add to queue');
   },
 
   async voteSkip(userId: string): Promise<void> {
-    await fetch(`${API_BASE}/vote-skip`, {
+    const res = await fetch(`${API_BASE}/vote-skip`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId })
     });
+    if (!res.ok) throw new Error('Failed to vote skip');
   },
 
   getStreamUrl(songId: number) {
@@ -91,32 +142,45 @@ export const api = {
 
   async getAuthStatus() {
       const res = await fetch(`${API_BASE}/auth/status`);
-      if (!res.ok) return { loggedIn: false };
+      if (!res.ok) throw new Error('Failed to get auth status');
       return await res.json();
   },
 
-  async joinRoom(userId: string, userName?: string): Promise<void> {
-    await fetch(`${API_BASE}/join`, {
+  async setProfile(userId: string, nickname?: string, email?: string) {
+    const res = await fetch(`${API_BASE}/profile`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, userName })
+      body: JSON.stringify({ userId, nickname, email })
     });
+    if (!res.ok) throw new Error('Failed to set profile');
+    return await res.json();
   },
 
-  async leaveRoom(userId: string): Promise<void> {
-    await fetch(`${API_BASE}/leave`, {
+  async joinRoom(userId: string, userName?: string, connectionId?: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/join`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId })
+      body: JSON.stringify({ userId, userName, connectionId })
     });
+    if (!res.ok) throw new Error('Failed to join room');
+  },
+
+  async leaveRoom(userId: string, connectionId?: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/leave`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, connectionId })
+    });
+    if (!res.ok) throw new Error('Failed to leave room');
   },
 
   async heartbeat(userId: string, userName?: string): Promise<void> {
-    await fetch(`${API_BASE}/heartbeat`, {
+    const res = await fetch(`${API_BASE}/heartbeat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, userName })
     });
+    if (!res.ok) throw new Error('Heartbeat failed');
   },
 
   getCoverUrl(songId: number) {

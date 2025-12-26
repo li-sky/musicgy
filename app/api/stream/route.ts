@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'songId required' }, { status: 400 });
     }
 
-    const current = roomService.getCurrentSong();
+    const current = await roomService.getCurrentSong();
     
     let url = current?.id === Number(songId) ? current.url : null;
     if (!url) {

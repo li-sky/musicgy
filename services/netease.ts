@@ -1,33 +1,100 @@
 // @ts-ignore
-import { search, song_url, song_detail, login_qr_key, login_qr_create, login_qr_check, login_status } from '@neteasecloudmusicapienhanced/api';
+import { search, song_url, song_detail, login_qr_key, login_qr_create, login_qr_check, login_status, artist_album, album } from '@neteasecloudmusicapienhanced/api';
 import { Readable } from 'stream';
+import redis from '@/lib/redis';
 
-let globalCookie = '';
+const COOKIE_KEY = 'netease:cookie';
 
 export const neteaseService = {
-  setCookie(cookie: string) {
-    globalCookie = cookie;
+  async setCookie(cookie: string) {
+    await redis.set(COOKIE_KEY, cookie);
   },
 
-  getCookie() {
-    return globalCookie;
+  async getCookie() {
+    return (await redis.get(COOKIE_KEY)) || '';
   },
 
-  async search(query: string) {
-    const res = await search({ keywords: query, limit: 10, cookie: globalCookie }) as any;
-    return (res.body?.result?.songs || []).map((s: any) => ({
-      id: s.id,
-      name: s.name,
-      artist: s.artists?.[0]?.name || 'Unknown',
-      album: s.album?.name || 'Unknown',
-      cover: s.album?.artist?.img1v1Url || '',
-      duration: (s.duration || 0) / 1000,
-      addedBy: 'system'
+  async search(query: string, type: number = 1, limit: number = 20, offset: number = 0) {
+    const cookie = await this.getCookie();
+    const res = await search({ keywords: query, type, limit, offset, cookie }) as any;
+    
+    // Handle different search types
+    if (type === 1) { // Songs
+      return (res.body?.result?.songs || []).map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        artist: s.artists?.[0]?.name || 'Unknown',
+        album: s.album?.name || 'Unknown',
+        cover: s.album?.artist?.img1v1Url || '', // Search result songs often don't have good covers, fallback or fetch detail might be needed
+        duration: (s.duration || 0) / 1000,
+        addedBy: 'system',
+        type: 'song'
+      }));
+    } else if (type === 10) { // Albums
+      return (res.body?.result?.albums || []).map((a: any) => ({
+        id: a.id,
+        name: a.name,
+        artist: a.artist?.name || 'Unknown',
+        cover: a.picUrl || '',
+        publishTime: a.publishTime,
+        size: a.size,
+        type: 'album'
+      }));
+    } else if (type === 100) { // Artists
+      return (res.body?.result?.artists || []).map((a: any) => ({
+        id: a.id,
+        name: a.name,
+        cover: a.picUrl || a.img1v1Url || '',
+        albumSize: a.albumSize,
+        type: 'artist'
+      }));
+    }
+    
+    return [];
+  },
+
+  async getArtistAlbums(id: number, limit: number = 20, offset: number = 0) {
+    const cookie = await this.getCookie();
+    const res = await artist_album({ id, limit, offset, cookie }) as any;
+    return (res.body?.hotAlbums || []).map((a: any) => ({
+      id: a.id,
+      name: a.name,
+      artist: a.artist?.name || 'Unknown',
+      cover: a.picUrl || '',
+      publishTime: a.publishTime,
+      size: a.size,
+      type: 'album'
     }));
   },
 
+  async getAlbum(id: number) {
+    const cookie = await this.getCookie();
+    const res = await album({ id, cookie }) as any;
+    const songs = (res.body?.songs || []).map((s: any) => ({
+      id: s.id,
+      name: s.name,
+      artist: s.ar?.[0]?.name || 'Unknown',
+      album: s.al?.name || 'Unknown',
+      cover: s.al?.picUrl || '',
+      duration: (s.dt || 0) / 1000,
+      addedBy: 'system',
+      type: 'song'
+    }));
+    return {
+      album: {
+        id: res.body?.album?.id,
+        name: res.body?.album?.name,
+        cover: res.body?.album?.picUrl,
+        artist: res.body?.album?.artist?.name,
+        description: res.body?.album?.description,
+      },
+      songs
+    };
+  },
+
   async getSongDetail(id: number) {
-    const res = await song_detail({ ids: id.toString(), cookie: globalCookie }) as any;
+    const cookie = await this.getCookie();
+    const res = await song_detail({ ids: id.toString(), cookie }) as any;
     const s = res.body?.songs?.[0];
     if (!s) return null;
     return {
@@ -41,18 +108,21 @@ export const neteaseService = {
   },
 
   async getSongUrl(id: number) {
+    const cookie = await this.getCookie();
     // Request lossless audio
-    const res = await song_url({ id, cookie: globalCookie, level: 'lossless' } as any) as any;
+    const res = await song_url({ id, cookie, level: 'lossless' } as any) as any;
     return res.body?.data?.[0]?.url || res.body?.url;
   },
 
   async getCoverUrl(id: number) {
+    const cookie = await this.getCookie();
     // Get song details which includes cover URL
-    const res = await song_detail({ ids: id.toString(), cookie: globalCookie }) as any;
+    const res = await song_detail({ ids: id.toString(), cookie }) as any;
     return res.body?.songs?.[0]?.al?.picUrl || '';
   },
 
   async proxyAudio(url: string, res: any, rangeHeader?: string) {
+    // ... proxy logic doesn't need cookie as it fetches from URL directly ...
     try {
       const headers: any = {
         'Referer': 'https://music.163.com/',
@@ -107,7 +177,8 @@ export const neteaseService = {
     return result.body;
   },
   async getStatus() { 
-    const result = await login_status({ cookie: globalCookie }) as any;
+    const cookie = await this.getCookie();
+    const result = await login_status({ cookie }) as any;
     return result.body;
   }
 };
