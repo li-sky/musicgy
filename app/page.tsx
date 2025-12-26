@@ -240,14 +240,12 @@ export default function Home() {
       navigator.mediaSession.setActionHandler('nexttrack', () => {
          api.voteSkip(userId);
       });
-      
-      navigator.mediaSession.setActionHandler('play', () => {
-          audioRef.current?.play().catch(() => {});
-      });
 
-      navigator.mediaSession.setActionHandler('pause', () => {
-          audioRef.current?.pause();
-      });
+      navigator.mediaSession.setActionHandler('previoustrack', () => { });
+      
+      navigator.mediaSession.setActionHandler('play', () => { });
+
+      navigator.mediaSession.setActionHandler('pause', () => { });
     }
   }, [state?.currentSong, userId]);
 
