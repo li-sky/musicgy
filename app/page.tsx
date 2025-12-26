@@ -160,6 +160,32 @@ export default function Home() {
     }
   }, [state?.currentSong?.id, state?.startTime, state?.serverTime, hasStarted, clockOffset]);
 
+  // Media Session API Support
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && 'mediaSession' in navigator && state?.currentSong) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: state.currentSong.name,
+        artist: state.currentSong.artist,
+        album: state.currentSong.album,
+        artwork: [
+          { src: api.getCoverUrl(state.currentSong.id), sizes: '512x512', type: 'image/jpeg' }
+        ]
+      });
+
+      navigator.mediaSession.setActionHandler('nexttrack', () => {
+         api.voteSkip(userId);
+      });
+      
+      navigator.mediaSession.setActionHandler('play', () => {
+          audioRef.current?.play().catch(() => {});
+      });
+
+      navigator.mediaSession.setActionHandler('pause', () => {
+          audioRef.current?.pause();
+      });
+    }
+  }, [state?.currentSong, userId]);
+
 
   const handleStartListening = async () => {
     setHasStarted(true);
