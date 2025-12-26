@@ -1,4 +1,4 @@
-const CACHE_NAME = 'musicgy-audio-v4';
+const CACHE_NAME = 'musicgy-audio-v5';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -18,9 +18,7 @@ self.addEventListener('fetch', (event) => {
 
   if (!url.pathname.startsWith('/api/')) {
     event.respondWith(
-      caches.match(event.request).then((response) => {
-        return response || fetch(event.request);
-      })
+      caches.match(event.request).then((res) => res || fetch(event.request))
     );
   }
 });
@@ -29,71 +27,44 @@ async function handleAudioRequest(event) {
   const url = new URL(event.request.url);
   const songId = url.searchParams.get('id');
   const isPrefetch = url.searchParams.has('prefetch');
-  const cacheKey = `audio-data-${songId}`;
-  const cache = await caches.open(CACHE_NAME);
+  const rangeHeader = event.request.headers.get('Range');
   
-  const cachedRes = await cache.match(cacheKey);
-  if (cachedRes) {
-    return handleRangeRequest(event.request, cachedRes);
-  }
+  const cacheKey = `audio-head-${songId}`;
+  const cache = await caches.open(CACHE_NAME);
 
+  // 1. Prefetch Logic: Download only the first 1MB
   if (isPrefetch) {
-    const fetchUrl = url.origin + url.pathname + '?id=' + songId;
-    fetch(fetchUrl).then(response => {
-      if (response.ok && response.status === 200) {
+    const prefetchUrl = url.origin + url.pathname + '?id=' + songId;
+    const prefetchReq = new Request(prefetchUrl, {
+      headers: { 'Range': 'bytes=0-1048575' }
+    });
+    
+    fetch(prefetchReq).then(response => {
+      if (response.status === 206) {
         cache.put(cacheKey, response);
+        console.log(`[SW] Pre-cached first 1MB for ${songId}`);
       }
     }).catch(() => {});
+    
     return new Response(null, { status: 204 });
   }
 
-  // Real-time playback - directly from network
-  // In the background, try to cache it for future use
-  const backgroundFetchUrl = url.origin + url.pathname + '?id=' + songId;
-  cache.match(cacheKey).then(res => {
-      if (!res) {
-          fetch(backgroundFetchUrl).then(response => {
-              if (response.ok && response.status === 200) cache.put(cacheKey, response);
-          }).catch(() => {});
+  // 2. Playback Logic
+  if (rangeHeader) {
+    const bytes = /^bytes=(\d+)-/.exec(rangeHeader);
+    const startByte = bytes ? Number(bytes[1]) : 0;
+
+    // If browser asks for the start, and we have the head cached
+    if (startByte === 0) {
+      const cachedResponse = await cache.match(cacheKey);
+      if (cachedResponse) {
+        console.log(`[SW] Hit cache head for ${songId}. Browser will request rest later.`);
+        return cachedResponse;
       }
-  });
-
-  return fetch(event.request);
-}
-
-async function handleRangeRequest(request, response) {
-  const rangeHeader = request.headers.get('Range');
-  if (!rangeHeader || response.status === 206) {
-    return response;
-  }
-
-  const blob = await response.blob();
-  const bytes = /^bytes=(\d+)-(\d+)?$/.exec(rangeHeader);
-  
-  if (bytes) {
-    const start = Number(bytes[1]);
-    const end = bytes[2] ? Number(bytes[2]) : blob.size - 1;
-    
-    if (start >= blob.size) {
-        return new Response(null, {
-            status: 416,
-            headers: { 'Content-Range': `bytes */${blob.size}` }
-        });
     }
-
-    const slicedBlob = blob.slice(start, end + 1);
-    const headers = new Headers(response.headers);
-    headers.set('Content-Type', blob.type || 'audio/mpeg');
-    headers.set('Content-Range', `bytes ${start}-${end}/${blob.size}`);
-    headers.set('Content-Length', String(slicedBlob.size));
-    headers.set('Accept-Ranges', 'bytes');
-
-    return new Response(slicedBlob, {
-      status: 206,
-      statusText: 'Partial Content',
-      headers: headers
-    });
   }
 
-  return response;
+  // 3. Mid-song join or cache miss: Direct pass-through
+  // The browser's native range handling will take over.
+  return fetch(event.request);
 }
