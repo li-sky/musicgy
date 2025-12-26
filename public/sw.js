@@ -1,4 +1,4 @@
-const CACHE_NAME = 'musicgy-audio-v3';
+const CACHE_NAME = 'musicgy-audio-v4';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -34,11 +34,9 @@ async function handleAudioRequest(event) {
   
   const cachedRes = await cache.match(cacheKey);
   if (cachedRes) {
-    // If we have it in cache, handle Range requests locally for instant seeking
     return handleRangeRequest(event.request, cachedRes);
   }
 
-  // If not in cache and it's a prefetch, download fully in background
   if (isPrefetch) {
     const fetchUrl = url.origin + url.pathname + '?id=' + songId;
     fetch(fetchUrl).then(response => {
@@ -49,11 +47,8 @@ async function handleAudioRequest(event) {
     return new Response(null, { status: 204 });
   }
 
-  // CRITICAL FIX: For real-time playback (especially mid-song join), 
-  // do NOT use blob() or arrayBuffer() as it waits for the full download.
-  // Instead, fetch directly from network and let the browser handle ranges.
-  
-  // We can also trigger a background cache for NEXT time
+  // Real-time playback - directly from network
+  // In the background, try to cache it for future use
   const backgroundFetchUrl = url.origin + url.pathname + '?id=' + songId;
   cache.match(cacheKey).then(res => {
       if (!res) {
@@ -72,25 +67,31 @@ async function handleRangeRequest(request, response) {
     return response;
   }
 
-  // This part is only reached if the item is FULLY in cache
   const blob = await response.blob();
-  const bytes = /^bytes=(\d+)-(\d+)?$/g.exec(rangeHeader);
+  const bytes = /^bytes=(\d+)-(\d+)?$/.exec(rangeHeader);
   
   if (bytes) {
     const start = Number(bytes[1]);
     const end = bytes[2] ? Number(bytes[2]) : blob.size - 1;
     
+    if (start >= blob.size) {
+        return new Response(null, {
+            status: 416,
+            headers: { 'Content-Range': `bytes */${blob.size}` }
+        });
+    }
+
     const slicedBlob = blob.slice(start, end + 1);
+    const headers = new Headers(response.headers);
+    headers.set('Content-Type', blob.type || 'audio/mpeg');
+    headers.set('Content-Range', `bytes ${start}-${end}/${blob.size}`);
+    headers.set('Content-Length', String(slicedBlob.size));
+    headers.set('Accept-Ranges', 'bytes');
+
     return new Response(slicedBlob, {
       status: 206,
       statusText: 'Partial Content',
-      headers: {
-        ...Object.fromEntries(response.headers),
-        'Content-Type': blob.type || 'audio/mpeg',
-        'Content-Range': `bytes ${start}-${end}/${blob.size}`,
-        'Content-Length': slicedBlob.size,
-        'Accept-Ranges': 'bytes'
-      }
+      headers: headers
     });
   }
 
