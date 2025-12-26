@@ -1,5 +1,6 @@
 import redis from '@/lib/redis';
 import { neteaseService } from './netease';
+import { storageService } from './storage';
 
 interface Song {
   id: number;
@@ -153,6 +154,24 @@ export const roomService = {
         pipeline.set(K.START_TIME, Date.now());
         pipeline.del(K.SKIP_VOTES);
         await pipeline.exec();
+
+        // Trigger cache/prefetch logic
+        if (storageService.isEnabled) {
+          // 1. Ensure current song is cached (start downloading if not already)
+          neteaseService.downloadAndCacheSong(nextSong.id).catch(err => 
+            console.error(`[Preload] Failed to cache current song ${nextSong.id}`, err)
+          );
+
+          // 2. Peek at next song and pre-fetch
+          const headOfQueueStr = await redis.lindex(K.QUEUE, 0);
+          if (headOfQueueStr) {
+             const headOfQueue = JSON.parse(headOfQueueStr);
+             console.log(`[Preload] Prefetching next song: ${headOfQueue.id}`);
+             neteaseService.downloadAndCacheSong(headOfQueue.id).catch(err => 
+               console.error(`[Preload] Failed to prefetch ${headOfQueue.id}`, err)
+             );
+          }
+        }
       } catch (e) {
         return this.playNext(retryCount + 1);
       }

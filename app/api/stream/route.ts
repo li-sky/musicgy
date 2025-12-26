@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { roomService } from '@/services/room';
 import { neteaseService } from '@/services/netease';
+import { storageService } from '@/services/storage';
 import { Readable } from 'stream';
+// @ts-ignore
+import { stat } from 'fs/promises';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,11 +18,66 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'songId required' }, { status: 400 });
     }
 
+    const id = Number(songId);
+
+    // --- Server-side Disk Cache Strategy ---
+    if (storageService.isEnabled) {
+        let exists = storageService.exists(id);
+        if (!exists) {
+            console.log(`[Stream] Cache miss for ${id}, downloading...`);
+            const success = await neteaseService.downloadAndCacheSong(id);
+            if (success) exists = true;
+        }
+
+        if (exists) {
+            console.log(`[Stream] Serving ${id} from cache`);
+            const rangeHeader = request.headers.get('range');
+            const fileSize = await storageService.getFileSize(id);
+            
+            // Handle Range requests
+            let start = 0;
+            let end = fileSize - 1;
+            let status = 200;
+            const headers: Record<string, string> = {
+                'Content-Type': 'audio/mpeg',
+                'Accept-Ranges': 'bytes',
+                'Content-Length': fileSize.toString()
+            };
+
+            if (rangeHeader) {
+                const parts = rangeHeader.replace(/bytes=/, "").split("-");
+                start = parseInt(parts[0], 10);
+                end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+                
+                if (start >= fileSize) {
+                    return new NextResponse(null, { 
+                        status: 416, 
+                        headers: { 'Content-Range': `bytes */${fileSize}` } 
+                    });
+                }
+
+                status = 206;
+                headers['Content-Range'] = `bytes ${start}-${end}/${fileSize}`;
+                headers['Content-Length'] = (end - start + 1).toString();
+            }
+
+            const fileStream = storageService.getReadStream(id, { start, end });
+            if (!fileStream) return NextResponse.json({ error: 'Read error' }, { status: 500 });
+
+            // Convert Node stream to Web stream for NextResponse
+            // @ts-ignore
+            const webStream = Readable.toWeb(fileStream);
+            
+            return new NextResponse(webStream as any, { status, headers });
+        }
+    }
+    // ---------------------------------------
+
     const current = await roomService.getCurrentSong();
     
     let url = current?.id === Number(songId) ? current.url : null;
     if (!url) {
-      url = await neteaseService.getSongUrl(Number(songId));
+      url = (await neteaseService.getSongUrl(Number(songId)))?.url;
     }
     
     if (!url) {
