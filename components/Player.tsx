@@ -8,9 +8,11 @@ interface PlayerProps {
   onVoteSkip: () => void;
   onOpenSearch: () => void;
   progress: number;
+  volume: number;
+  setVolume: (v: number) => void;
 }
 
-export const Player: React.FC<PlayerProps> = ({ state, userId, onVoteSkip, onOpenSearch, progress }) => {
+export const Player: React.FC<PlayerProps> = ({ state, userId, onVoteSkip, onOpenSearch, progress, volume, setVolume }) => {
   return (
     <div className="w-full max-w-2xl flex flex-col items-center justify-center relative z-10">
         
@@ -69,36 +71,63 @@ export const Player: React.FC<PlayerProps> = ({ state, userId, onVoteSkip, onOpe
                 ></div>
             </div>
 
-            <div className="flex items-center justify-center gap-12">
-                {/* Add Song Button */}
-                <button 
-                    onClick={onOpenSearch}
-                    className="p-5 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition border border-transparent hover:border-white/5 shadow-xl"
-                    title="Add Song"
-                >
-                    <Icons.Plus />
-                </button>
+            <div className="relative flex items-center justify-center">
+                <div className="flex items-center gap-12">
+                    {/* Add Song Button */}
+                    <button 
+                        onClick={onOpenSearch}
+                        className="p-5 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition border border-transparent hover:border-white/5 shadow-xl"
+                        title="Add Song"
+                    >
+                        <Icons.Plus />
+                    </button>
 
-                {/* Vote Skip Button */}
-                <button 
-                    onClick={onVoteSkip}
-                    disabled={!state.currentSong}
-                    className={`relative p-5 rounded-full transition group border border-transparent ${
-                        state.currentSong 
-                            ? 'text-slate-400 hover:text-white hover:bg-white/10 hover:border-white/5 shadow-xl' 
-                            : 'text-slate-600 cursor-not-allowed'
-                    }`}
-                    title="Vote Skip"
-                >
-                    <Icons.Skip />
-                    
-                    {/* Vote Badge */}
-                    {state.votes > 0 && (
-                         <div className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full shadow-lg border border-slate-900">
-                             {state.votes}/{state.requiredVotes}
-                         </div>
-                    )}
-                </button>
+                    {/* Vote Skip Button */}
+                    <button 
+                        onClick={onVoteSkip}
+                        disabled={!state.currentSong}
+                        className={`relative p-5 rounded-full transition group border border-transparent ${
+                            state.currentSong 
+                                ? 'text-slate-400 hover:text-white hover:bg-white/10 hover:border-white/5 shadow-xl' 
+                                : 'text-slate-600 cursor-not-allowed'
+                        }`}
+                        title="Vote Skip"
+                    >
+                        <Icons.Skip />
+                        
+                        {/* Vote Badge */}
+                        {state.votes > 0 && (
+                            <div className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full shadow-lg border border-slate-900">
+                                {state.votes}/{state.requiredVotes}
+                            </div>
+                        )}
+                    </button>
+                </div>
+
+                {/* Volume Control - Desktop Only */}
+                <div className="hidden md:flex absolute right-0 items-center gap-3 group/volume bg-white/5 hover:bg-white/10 px-4 py-2 rounded-2xl border border-white/5 transition-all">
+                    <button 
+                        onClick={() => setVolume(volume === 0 ? 1 : 0)}
+                        className="text-slate-400 hover:text-white transition"
+                    >
+                        {volume === 0 ? <Icons.VolumeMuted /> : <Icons.Volume />}
+                    </button>
+                    <div className="w-20 h-1 bg-slate-800/50 rounded-full overflow-hidden relative">
+                        <input 
+                            type="range" 
+                            min="0" 
+                            max="1" 
+                            step="0.01" 
+                            value={volume}
+                            onChange={(e) => setVolume(parseFloat(e.target.value))}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                        />
+                        <div 
+                            className="absolute inset-y-0 left-0 bg-white/60 group-hover/volume:bg-white transition-colors"
+                            style={{ width: `${volume * 100}%` }}
+                        ></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

@@ -35,6 +35,14 @@ export default function Home() {
   const [hasStarted, setHasStarted] = useState(false);
   const [profile, setProfile] = useState<{ nickname?: string; email?: string; avatarUrl?: string } | null>(null);
   const [isAudioSyncing, setIsAudioSyncing] = useState(false);
+  const [volume, setVolume] = useState(() => {
+    try {
+      const saved = localStorage.getItem('musicgy_volume');
+      return saved !== null ? parseFloat(saved) : 1;
+    } catch (e) {
+      return 1;
+    }
+  });
   
   const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -149,6 +157,14 @@ export default function Home() {
 
     return () => clearInterval(heartbeatInterval);
   }, [hasStarted, userId, userName, profile?.nickname]);
+
+  // Sync volume
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
+    }
+    localStorage.setItem('musicgy_volume', volume.toString());
+  }, [volume]);
 
   // Audio Sync Logic
   useEffect(() => {
@@ -360,6 +376,8 @@ export default function Home() {
                     onVoteSkip={() => api.voteSkip(userId)}
                     onOpenSearch={() => setIsSearchOpen(true)}
                     progress={currentProgress}
+                    volume={volume}
+                    setVolume={setVolume}
                 />
              )}
          </div>
