@@ -117,7 +117,7 @@ export const neteaseService = {
     
     // Request Hi-Res audio (jymaster = Ultra High Quality Master)
     // Falls back to lower quality automatically by the API usually
-    const res = await song_url_v1({ id, cookie, level: 'jymaster' } as any) as any;
+    const res = await song_url_v1({ id, cookie, level: 'exhigh' } as any) as any;
     
     let data = res.body?.data?.[0];
     
