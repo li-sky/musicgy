@@ -5,6 +5,8 @@ bun.lockb
 # Build outputs
 dist/
 build/
+.next/
+out/
 
 # Environment variables
 .env
@@ -60,3 +62,6 @@ ecosystem.config.js
 
 # Bun
 .bun/
+
+# Next.js
+next-env.d.ts
