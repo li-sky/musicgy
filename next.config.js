@@ -12,7 +12,7 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
-  serverExternalPackages: ['@neteasecloudmusicapienhanced/api', '@vercel/og'],
+  serverExternalPackages: ['@neteasecloudmusicapienhanced/api'],
 }
 
 export default nextConfig
