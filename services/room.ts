@@ -139,11 +139,17 @@ export const roomService = {
 
       const nextSong = JSON.parse(nextSongStr);
       try {
-        const url = await neteaseService.getSongUrl(nextSong.id);
-        if (!url) return this.playNext(retryCount + 1);
+        const songInfo = await neteaseService.getSongUrl(nextSong.id);
+        if (!songInfo || !songInfo.url) return this.playNext(retryCount + 1);
 
         const pipeline = redis.pipeline();
-        pipeline.set(K.CURRENT, JSON.stringify({ ...nextSong, url }));
+        pipeline.set(K.CURRENT, JSON.stringify({ 
+          ...nextSong, 
+          url: songInfo.url,
+          level: songInfo.level,
+          br: songInfo.br,
+          size: songInfo.size
+        }));
         pipeline.set(K.START_TIME, Date.now());
         pipeline.del(K.SKIP_VOTES);
         await pipeline.exec();

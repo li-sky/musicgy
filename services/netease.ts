@@ -1,5 +1,5 @@
 // @ts-ignore
-import { search, song_url, song_detail, login_qr_key, login_qr_create, login_qr_check, login_status, artist_album, album } from '@neteasecloudmusicapienhanced/api';
+import { search, song_url, song_url_v1, song_url_match, song_detail, login_qr_key, login_qr_create, login_qr_check, login_status, artist_album, album } from '@neteasecloudmusicapienhanced/api';
 import { Readable } from 'stream';
 import redis from '@/lib/redis';
 
@@ -108,10 +108,52 @@ export const neteaseService = {
   },
 
   async getSongUrl(id: number) {
-    const cookie = await this.getCookie();
-    // Request lossless audio
-    const res = await song_url({ id, cookie, level: 'lossless' } as any) as any;
-    return res.body?.data?.[0]?.url || res.body?.url;
+    let cookie = await this.getCookie();
+    if (!cookie.includes('os=pc')) {
+        cookie = `${cookie}; os=pc`;
+    }
+    
+    // Request Hi-Res audio (jymaster = Ultra High Quality Master)
+    // Falls back to lower quality automatically by the API usually
+    const res = await song_url_v1({ id, cookie, level: 'jymaster' } as any) as any;
+    
+    let data = res.body?.data?.[0];
+    
+    // Check if blocked or trial
+    // freeTrialInfo populates if user doesn't have rights to full song
+    if (!data?.url || data?.freeTrialInfo) {
+       console.log(`[Netease] Song ${id} blocked/trial. Attempting unblock...`);
+       try {
+           const matchRes = await song_url_match({ id, cookie } as any) as any;
+           // song_url_match returns a similar structure or just payload data depending on version
+           // Let's inspect typical unblock response
+           const matchData = matchRes.body?.data?.[0] || matchRes.body?.data;
+           
+           if (matchData?.url) {
+               console.log(`[Netease] Unblock success for ${id}`);
+               return {
+                   url: matchData.url,
+                   time: matchData.time || data?.time || 0,
+                   size: matchData.size || data?.size || 0,
+                   level: matchData.level || 'standard',
+                   br: matchData.br || 0
+               };
+           }
+       } catch (e) {
+           console.error(`[Netease] Unblock failed for ${id}`, e);
+       }
+    }
+
+    const url = data?.url || res.body?.url;
+    if (!url) return null;
+
+    return {
+      url,
+      time: data?.time || 0,
+      size: data?.size || 0,
+      level: data?.level || 'standard',
+      br: data?.br || 0
+    };
   },
 
   async getCoverUrl(id: number) {
