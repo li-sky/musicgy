@@ -6,12 +6,18 @@
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build",
+    "build:optimized": "npm run clean && node scripts/pre-build.js && next build && npm run analyze && npm run clean:unused",
+    "build:analyze": "npm run analyze-deps && npm run build:optimized",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "upload": "opennextjs-cloudflare upload",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "clean": "rimraf .next .open-next node_modules/.cache scripts/mock",
+    "clean:unused": "rimraf .open-next/server-functions/default/handler.mjs.map && rimraf .open-next/server-functions/default/*.map",
+    "analyze": "node scripts/optimize-build.js",
+    "analyze-deps": "node scripts/analyze-deps.js"
   },
   "dependencies": {
     "@neteasecloudmusicapienhanced/api": "^4.29.19",
