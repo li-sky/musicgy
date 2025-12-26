@@ -62,17 +62,7 @@ export async function GET(request: NextRequest) {
     
     // Convert web stream to Node.js readable stream and return
     if (audioRes.body) {
-      // Convert Web Stream to Node Stream
-      const nodeStream = Readable.fromWeb(audioRes.body as any);
-      const chunks: Uint8Array[] = [];
-      
-      for await (const chunk of nodeStream) {
-        chunks.push(chunk);
-      }
-      
-      const buffer = Buffer.concat(chunks);
-      
-      return new NextResponse(buffer, {
+      return new NextResponse(audioRes.body as any, {
         status,
         headers: responseHeaders,
       });

@@ -156,7 +156,7 @@ export default function Home() {
           if (audio.playbackRate !== 1.0) audio.playbackRate = 1.0;
         }
         
-        if (hasStarted && audio.paused) audio.play().catch(() => {});
+        if (hasStarted && audio.paused && !audio.ended) audio.play().catch(() => {});
     }
   }, [state?.currentSong?.id, state?.startTime, state?.serverTime, hasStarted, clockOffset]);
 
@@ -169,6 +169,11 @@ export default function Home() {
     } catch (e) {
         console.error("Failed to join room:", e);
     }
+  };
+
+  const handleSongEnded = () => {
+      // Trigger a state check immediately to speed up auto-play
+      api.getState(userId).catch(() => {});
   };
 
   if (!state) return (
@@ -349,7 +354,12 @@ export default function Home() {
         userId={userId}
       />
 
-      <audio ref={audioRef} className="hidden" crossOrigin="anonymous" />
+      <audio 
+        ref={audioRef} 
+        className="hidden" 
+        crossOrigin="anonymous" 
+        onEnded={handleSongEnded}
+      />
     </div>
   );
 }
