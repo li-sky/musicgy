@@ -7,7 +7,9 @@
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "pages:build": "bunx @cloudflare/next-on-pages",
+    "deploy": "bun run pages:build && bun ./node_modules/.bin/wrangler pages deploy .vercel/output/static"
   },
   "dependencies": {
     "@neteasecloudmusicapienhanced/api": "^4.29.19",
@@ -28,11 +30,14 @@
     "tailwindcss": "^3.4.19"
   },
   "devDependencies": {
+    "@cloudflare/next-on-pages": "^1.13.16",
     "@types/node": "^25.0.3",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.2",
     "typescript": "^5.9.3",
-    "vite": "^7.3.0"
+    "vercel": "^50.1.3",
+    "vite": "^7.3.0",
+    "wrangler": "^4.54.0"
   }
 }
