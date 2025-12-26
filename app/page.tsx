@@ -152,46 +152,62 @@ export default function Home() {
 
   // Audio Sync Logic
   useEffect(() => {
-    if (!state?.currentSong || !audioRef.current) return;
-    if (isAudioSyncing) return;
-
+    if (!state?.currentSong || !audioRef.current || !hasStarted) return;
+    
     const audio = audioRef.current;
     const songId = state.currentSong.id;
-    const currentSrc = audio.getAttribute('data-song-id');
-    const isSameSong = String(songId) === currentSrc;
+    const currentSrcId = audio.getAttribute('data-song-id');
+    const isSameSong = String(songId) === currentSrcId;
 
+    // Calculate where we SHOULD be
     let expectedTime = 0;
-    if (state.serverTime) {
+    if (state.serverTime && state.startTime) {
       expectedTime = Math.max(0, (Date.now() + clockOffset - state.startTime) / 1000);
     }
 
     if (!isSameSong) {
+       console.log(`[Audio] Switching to song ${songId}`);
        setIsAudioSyncing(true);
+       
+       // 1. Stop current playback and clear src to kill pending requests
+       audio.pause();
+       audio.removeAttribute('src');
+       audio.load();
+       
+       // 2. Set new song info
        const streamUrl = api.getStreamUrl(songId);
-       audio.src = streamUrl;
        audio.setAttribute('data-song-id', String(songId));
-       audio.currentTime = expectedTime;
-       audio.playbackRate = 1.0;
+       audio.src = streamUrl;
        
-       audio.addEventListener('canplay', () => {
-         audio.play().catch(e => console.warn("Autoplay blocked", e));
-         setIsAudioSyncing(false);
-       }, { once: true });
+       // 3. Only seek after metadata is loaded
+       const onMetadata = () => {
+           console.log(`[Audio] Metadata loaded, seeking to ${expectedTime}`);
+           audio.currentTime = expectedTime;
+           audio.play().catch(e => console.warn("Autoplay blocked", e));
+           setIsAudioSyncing(false);
+       };
        
-    } else {
+       audio.addEventListener('loadedmetadata', onMetadata, { once: true });
+       return () => audio.removeEventListener('loadedmetadata', onMetadata);
+       
+    } else if (!isAudioSyncing) {
+        // Sync drift if same song
         const currentTime = audio.currentTime;
         const drift = Math.abs(currentTime - expectedTime);
+        const remaining = state.currentSong.duration - currentTime;
         
-        if (drift > 2) {
+        if (drift > 2.5 && remaining > 3) {
+          console.log(`[Audio] Drift detected (${drift.toFixed(2)}s), re-syncing...`);
           setIsAudioSyncing(true);
           audio.currentTime = expectedTime;
-          audio.playbackRate = 1.0;
-          setTimeout(() => setIsAudioSyncing(false), 100);
+          setTimeout(() => setIsAudioSyncing(false), 500);
         }
         
-        if (hasStarted && audio.paused && !audio.ended) audio.play().catch(() => {});
+        if (audio.paused && !audio.ended) {
+            audio.play().catch(() => {});
+        }
     }
-  }, [state?.currentSong?.id, state?.startTime, state?.serverTime, hasStarted, clockOffset]);
+  }, [state?.currentSong?.id, state?.startTime, hasStarted, clockOffset]);
 
   // Media Session API Support
   useEffect(() => {
@@ -231,8 +247,13 @@ export default function Home() {
   };
 
   const handleSongEnded = () => {
-      // Trigger a state check immediately to speed up auto-play
-      api.getState(userId).catch(() => {});
+      // Trigger a state check immediately and update locally
+      api.getState(userId).then(s => setState(s)).catch(() => {});
+  };
+
+  const handleAudioError = (e: any) => {
+      console.error("Audio playback error:", e);
+      setIsAudioSyncing(false);
   };
 
   if (!state) return (
@@ -418,6 +439,7 @@ export default function Home() {
         className="hidden" 
         crossOrigin="anonymous" 
         onEnded={handleSongEnded}
+        onError={handleAudioError}
       />
     </div>
   );

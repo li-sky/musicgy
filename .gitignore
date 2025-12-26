@@ -65,3 +65,5 @@ ecosystem.config.js
 
 # Next.js
 next-env.d.ts
+
+tsconfig.tsbuildinfo
