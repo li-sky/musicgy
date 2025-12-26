@@ -45,6 +45,7 @@ export default function Home() {
   });
   
   const audioRef = useRef<HTMLAudioElement>(null);
+  const transitioningRef = useRef<number | null>(null);
 
   // --- Effects (State, Sync, Heartbeat, Unload) ---
   // (Kept identical logic to ensure functionality remains)
@@ -53,6 +54,17 @@ export default function Home() {
     const fetchState = async () => {
       try {
         const s = await api.getState(hasStarted ? userId : undefined);
+        
+        // Concurrent control: if we are transitioning locally, ignore stale server state
+        if (transitioningRef.current) {
+            if (s.currentSong?.id === transitioningRef.current) {
+                transitioningRef.current = null; // Sync complete
+            } else {
+                const isOldSong = state?.currentSong && s.currentSong?.id === state.currentSong.id;
+                if (isOldSong) return; // Skip stale update
+            }
+        }
+
         setState(s);
         if (s.serverTime) setClockOffset(s.serverTime - Date.now());
 
@@ -68,7 +80,7 @@ export default function Home() {
     fetchState();
     const interval = setInterval(fetchState, 3000);
     return () => clearInterval(interval);
-  }, [hasStarted, userId, profile?.nickname, userName, connectionId]);
+  }, [hasStarted, userId, profile?.nickname, userName, connectionId, state?.currentSong?.id]);
 
   // Client-side Pre-fetching (First 1MB only)
   useEffect(() => {
@@ -261,8 +273,45 @@ export default function Home() {
   };
 
   const handleSongEnded = () => {
-      // Trigger a state check immediately and update locally
-      api.getState(userId).then(s => setState(s)).catch(() => {});
+      console.log("[Audio] Song ended, performing optimistic transition...");
+      
+      // Optimistic transition if queue is available
+      if (state?.queue && state.queue.length > 0) {
+          const nextSong = state.queue[0];
+          transitioningRef.current = nextSong.id;
+          
+          setState(prev => {
+              if (!prev) return null;
+              return {
+                  ...prev,
+                  currentSong: nextSong,
+                  queue: prev.queue.slice(1),
+                  startTime: Date.now() + clockOffset,
+                  votes: 0
+              };
+          });
+
+          // Safety timeout to release lock if server never updates
+          setTimeout(() => {
+              if (transitioningRef.current === nextSong.id) {
+                  transitioningRef.current = null;
+              }
+          }, 5000);
+      }
+
+      // Immediately trigger server-side transition and sync
+      api.getState(userId).then(s => {
+          if (transitioningRef.current) {
+              if (s.currentSong?.id === transitioningRef.current || s.currentSong?.id !== state?.currentSong?.id) {
+                  transitioningRef.current = null;
+                  setState(s);
+              }
+          } else {
+              setState(s);
+          }
+      }).catch(() => {
+          transitioningRef.current = null;
+      });
   };
 
   const handleAudioError = (e: any) => {
