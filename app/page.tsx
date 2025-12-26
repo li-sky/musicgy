@@ -54,17 +54,6 @@ export default function Home() {
     const fetchState = async () => {
       try {
         const s = await api.getState(hasStarted ? userId : undefined);
-        
-        // Concurrent control: if we are transitioning locally, ignore stale server state
-        if (transitioningRef.current) {
-            if (s.currentSong?.id === transitioningRef.current) {
-                transitioningRef.current = null; // Sync complete
-            } else {
-                const isOldSong = state?.currentSong && s.currentSong?.id === state.currentSong.id;
-                if (isOldSong) return; // Skip stale update
-            }
-        }
-
         setState(s);
         if (s.serverTime) setClockOffset(s.serverTime - Date.now());
 
@@ -80,7 +69,7 @@ export default function Home() {
     fetchState();
     const interval = setInterval(fetchState, 3000);
     return () => clearInterval(interval);
-  }, [hasStarted, userId, profile?.nickname, userName, connectionId, state?.currentSong?.id]);
+  }, [hasStarted, userId, profile?.nickname, userName, connectionId]);
 
   // Client-side Pre-fetching (First 1MB only)
   useEffect(() => {
@@ -94,13 +83,12 @@ export default function Home() {
 
     const performPrefetch = async () => {
        try {
-          // 增加 _t 参数强制在 Network 面板显示，避免被浏览器静默合并
-          const url = api.getStreamUrl(nextSongId) + `&_prefetch=1&t=${Date.now()}`;
-          console.log(`[Client Preload] Starting fetch for: ${nextSong.name}, URL: ${url}`);
+          // URL 必须完全一致才能命中缓存
+          const url = api.getStreamUrl(nextSongId);
+          console.log(`[Client Preload] Warmup: ${nextSong.name}`);
           
           const res = await fetch(url, {
-             headers: { 'Range': 'bytes=0-1048575' },
-             cache: 'no-cache'
+             headers: { 'Range': 'bytes=0-1048575' }
           });
           
           if (res.ok && res.body) {
@@ -113,15 +101,13 @@ export default function Home() {
                    totalRead += value?.length || 0;
                 }
                 sessionStorage.setItem(cacheKey, 'true');
-                console.log(`[Client Preload] Success! Prefetched ${totalRead} bytes for ${nextSong.name}`);
+                console.log(`[Client Preload] Cached ${totalRead} bytes for ${nextSong.name}`);
              } finally {
                 reader.releaseLock();
              }
-          } else {
-             console.warn(`[Client Preload] Failed with status: ${res.status}`);
           }
        } catch (e) {
-          console.warn(`[Client Preload] Error prefetching ${nextSongId}`, e);
+          console.warn(`[Client Preload] Error ${nextSongId}`, e);
        }
     };
 
