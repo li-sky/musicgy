@@ -30,7 +30,10 @@ export async function GET(request: NextRequest) {
         }
 
         if (exists) {
-            console.log(`[Stream] Serving ${id} from cache`);
+            const metadata = await storageService.getMetadata(id);
+            const contentType = metadata?.contentType || 'audio/mpeg';
+            
+            console.log(`[Stream] Serving ${id} from cache (${contentType})`);
             const rangeHeader = request.headers.get('range');
             const fileSize = await storageService.getFileSize(id);
             
@@ -39,7 +42,7 @@ export async function GET(request: NextRequest) {
             let end = fileSize - 1;
             let status = 200;
             const headers: Record<string, string> = {
-                'Content-Type': 'audio/mpeg',
+                'Content-Type': contentType,
                 'Accept-Ranges': 'bytes',
                 'Content-Length': fileSize.toString()
             };

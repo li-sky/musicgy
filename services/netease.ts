@@ -172,8 +172,9 @@ export const neteaseService = {
       const res = await fetch(info.url, { headers });
       if (!res.ok || !res.body) return false;
 
-      await storageService.save(id, res.body);
-      console.log(`[Netease] Cached song ${id}`);
+      const contentType = res.headers.get('content-type') || 'audio/mpeg';
+      await storageService.save(id, res.body, contentType);
+      console.log(`[Netease] Cached song ${id} (${contentType})`);
       return true;
     } catch (e) {
       console.error(`[Netease] Failed to cache song ${id}`, e);

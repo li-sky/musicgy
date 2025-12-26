@@ -5,6 +5,11 @@ import { pipeline } from 'stream/promises';
 
 const CACHE_DIR = process.env.MUSIC_CACHE_DIR;
 
+export interface SongMetadata {
+  contentType: string;
+  size: number;
+}
+
 export const storageService = {
   get isEnabled() {
     return !!CACHE_DIR;
@@ -12,7 +17,12 @@ export const storageService = {
 
   getCachePath(songId: number) {
     if (!CACHE_DIR) return null;
-    return path.join(CACHE_DIR, `${songId}.mp3`); // Assuming mp3 for now, or we can detect
+    return path.join(CACHE_DIR, `${songId}.data`);
+  },
+
+  getMetadataPath(songId: number) {
+    if (!CACHE_DIR) return null;
+    return path.join(CACHE_DIR, `${songId}.json`);
   },
 
   async ensureCacheDir() {
@@ -23,7 +33,19 @@ export const storageService = {
 
   exists(songId: number): boolean {
     const p = this.getCachePath(songId);
-    return !!p && fs.existsSync(p);
+    const m = this.getMetadataPath(songId);
+    return !!p && fs.existsSync(p) && !!m && fs.existsSync(m);
+  },
+
+  async getMetadata(songId: number): Promise<SongMetadata | null> {
+    const p = this.getMetadataPath(songId);
+    if (!p || !fs.existsSync(p)) return null;
+    try {
+      const data = await fs.promises.readFile(p, 'utf-8');
+      return JSON.parse(data);
+    } catch {
+      return null;
+    }
   },
 
   getReadStream(songId: number, options?: { start?: number; end?: number }) {
@@ -39,14 +61,13 @@ export const storageService = {
     return stat.size;
   },
 
-  async save(songId: number, stream: Readable | ReadableStream) {
+  async save(songId: number, stream: Readable | ReadableStream, contentType: string) {
     if (!CACHE_DIR) return;
     await this.ensureCacheDir();
     const p = this.getCachePath(songId);
-    if (!p) return;
+    const m = this.getMetadataPath(songId);
+    if (!p || !m) return;
 
-    // If already exists, maybe skip? For now, overwrite or assume check done before.
-    // Actually, writing to a temp file and renaming is safer for concurrency.
     const tempPath = `${p}.tmp`;
     const fileStream = fs.createWriteStream(tempPath);
 
@@ -54,11 +75,15 @@ export const storageService = {
         if (stream instanceof Readable) {
              await pipeline(stream, fileStream);
         } else {
-             // Web stream
              // @ts-ignore
              await pipeline(Readable.fromWeb(stream), fileStream);
         }
+        
+        const size = (await fs.promises.stat(tempPath)).size;
         await fs.promises.rename(tempPath, p);
+        
+        // Save metadata
+        await fs.promises.writeFile(m, JSON.stringify({ contentType, size }));
     } catch (e) {
         console.error(`Failed to save song ${songId}:`, e);
         if (fs.existsSync(tempPath)) await fs.promises.unlink(tempPath);
