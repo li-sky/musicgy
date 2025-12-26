@@ -11,7 +11,8 @@ const nextConfig = {
   },
   typescript: {
     ignoreBuildErrors: false,
-  }
+  },
+  serverExternalPackages: ['@neteasecloudmusicapienhanced/api'],
 }
 
 export default nextConfig
