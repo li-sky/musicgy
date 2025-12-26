@@ -12,7 +12,7 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
-  webpack: (config, { isServer }) => {
+  turbopack: (config, { isServer }) => {
     if (isServer) {
       // Don't bundle the netease API for server-side
       config.externals = config.externals || [];
