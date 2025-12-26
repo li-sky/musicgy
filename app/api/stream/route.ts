@@ -70,7 +70,14 @@ export async function GET(request: NextRequest) {
             // Convert Node stream to Web stream safely
             const webStream = new ReadableStream({
                 start(controller) {
-                    fileStream.on('data', (chunk) => controller.enqueue(new Uint8Array(chunk)));
+                    fileStream.on('data', (chunk) => {
+                        if (typeof chunk === 'string') {
+                            controller.enqueue(new TextEncoder().encode(chunk));
+                        } else {
+                            // Ensure it's a Uint8Array (Buffer is a subclass, but explicit cast helps TS)
+                            controller.enqueue(new Uint8Array(chunk));
+                        }
+                    });
                     fileStream.on('end', () => {
                         try { controller.close(); } catch (e) {}
                     });
