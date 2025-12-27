@@ -25,34 +25,42 @@ self.addEventListener('fetch', (event) => {
 
 async function handleAudioRequest(event) {
   const url = new URL(event.request.url);
-  const songId = url.searchParams.get('id');
-  const isPrefetch = url.searchParams.has('prefetch');
+  const songId = url.searchParams.get("id");
+  const isPrefetch = url.searchParams.has("prefetch");
   const cacheKey = `audio-data-${songId}`;
+
   const cache = await caches.open(CACHE_NAME);
-  
-  // 1. If fully cached, serve via Range Request local handler
+
   const cachedRes = await cache.match(cacheKey);
   if (cachedRes) {
-    // Standard response if not a range request
-    if (!event.request.headers.get('Range')) return cachedRes;
+    if (!event.request.headers.get("Range")) return cachedRes;
     return handleRangeRequest(event.request, cachedRes);
   }
 
-  // 2. If it's a prefetch signal, download in background
   if (isPrefetch) {
-    const downloadUrl = url.origin + url.pathname + '?id=' + songId;
-    fetch(downloadUrl).then(response => {
-      if (response.ok && response.status === 200) {
-        cache.put(cacheKey, response);
-        console.log(`[SW] Background download complete for ${songId}`);
-      }
-    }).catch(() => {});
+    const downloadUrl = `${url.origin}${url.pathname}?id=${songId}`;
+    fetch(downloadUrl)
+      .then((response) => {
+        if (response.ok && response.status === 200) {
+          cache.put(cacheKey, response.clone()); // 注意：put 会消耗流，建议 clone
+          console.log(`[SW] Background download complete for ${songId}`);
+        }
+      })
+      .catch(() => {});
     return new Response(null, { status: 204 });
   }
 
-  // 3. Fallback: Always serve live playback directly from network to ensure sound
-  // Do not use blob() or arrayBuffer() here.
-  return fetch(event.request);
+  const headers = new Headers(event.request.headers);
+
+  const newReq = new Request(event.request.url, {
+    method: event.request.method,
+    headers: headers,
+    mode: "cors", 
+    credentials: "same-origin",
+    redirect: "follow",
+  });
+
+  return fetch(newReq);
 }
 
 async function handleRangeRequest(request, response) {

@@ -67,3 +67,7 @@ ecosystem.config.js
 next-env.d.ts
 
 tsconfig.tsbuildinfo
+
+# service worker compile output
+public/swe-worker*
+public/workbox-*
