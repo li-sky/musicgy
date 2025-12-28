@@ -245,7 +245,17 @@ export default function Home() {
 
 
   const handleStartListening = async () => {
+    // 1. Immediately unlock Autoplay Policy
+    if (audioRef.current) {
+        // We load() to tell the browser "this user wants audio". 
+        // Even if src is empty, this gesture counts.
+        audioRef.current.load();
+        // Trying to play and catch error also helps warm up the audio engine in some browsers
+        audioRef.current.play().catch(() => {});
+    }
+
     setHasStarted(true);
+    
     // Explicitly check for SW and try to activate if not controlled
     if ('serviceWorker' in navigator && !navigator.serviceWorker.controller) {
         navigator.serviceWorker.ready.then(reg => {

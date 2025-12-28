@@ -65,9 +65,13 @@ ecosystem.config.js
 
 # Next.js
 next-env.d.ts
+.open-next/
 
 tsconfig.tsbuildinfo
 
 # service worker compile output
 public/swe-worker*
 public/workbox-*
+
+# wrangler
+.wrangler/
