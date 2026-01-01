@@ -166,8 +166,12 @@ export default function Home() {
     
     const audio = audioRef.current;
     const songId = state.currentSong.id;
-    const currentSrcId = audio.getAttribute('data-song-id');
-    const isSameSong = String(songId) === currentSrcId;
+    // Treat the same song ID as a *new* playback instance if startTime changed.
+    // This prevents a common silent failure where a song finishes (audio.ended=true)
+    // and later the same song appears again in the queue: we must reload the source.
+    const playbackKey = `${songId}:${state.startTime || 0}`;
+    const currentPlaybackKey = audio.getAttribute('data-playback-key');
+    const isSamePlayback = playbackKey === currentPlaybackKey;
 
     // Calculate where we SHOULD be
     let expectedTime = 0;
@@ -175,8 +179,8 @@ export default function Home() {
       expectedTime = Math.max(0, (Date.now() + clockOffset - state.startTime) / 1000);
     }
 
-    if (!isSameSong) {
-       console.log(`[Audio] Switching to song ${songId}`);
+     if (!isSamePlayback) {
+       console.log(`[Audio] Switching to song ${songId} (key=${playbackKey})`);
        setIsAudioSyncing(true);
        
        // 1. Stop current playback and clear src to kill pending requests
@@ -187,6 +191,7 @@ export default function Home() {
        // 2. Set new song info
        const streamUrl = api.getStreamUrl(songId);
        audio.setAttribute('data-song-id', String(songId));
+       audio.setAttribute('data-playback-key', playbackKey);
        audio.src = streamUrl;
        
        // 3. Only seek after metadata is loaded
@@ -213,8 +218,14 @@ export default function Home() {
           setTimeout(() => setIsAudioSyncing(false), 500);
         }
         
-        if (audio.paused && !audio.ended) {
-            audio.play().catch(() => {});
+        // If the element is paused, try resuming. If it is ended, restart from expectedTime.
+        if (audio.ended) {
+          try {
+            audio.currentTime = expectedTime;
+          } catch (e) {}
+          audio.play().catch(() => {});
+        } else if (audio.paused) {
+          audio.play().catch(() => {});
         }
     }
   }, [state?.currentSong?.id, state?.startTime, hasStarted, clockOffset]);
