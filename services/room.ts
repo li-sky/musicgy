@@ -192,6 +192,71 @@ export const roomService = {
     this.checkAutoPlay().catch(console.error);
   },
 
+  async removeFromQueue(index: number, userId: string, expectedSongId?: number) {
+    const idx = Number(index);
+    if (!Number.isFinite(idx) || idx < 0 || !Number.isInteger(idx)) {
+      const e = new Error('invalid_index');
+      (e as any).code = 'invalid_index';
+      throw e;
+    }
+
+    const script = `
+      local idx = tonumber(ARGV[1])
+      if not idx or idx < 0 then return {err='invalid_index'} end
+
+      local v = redis.call('LINDEX', KEYS[1], idx)
+      if not v then return 0 end
+
+      local ok, obj = pcall(cjson.decode, v)
+      if not ok then return {err='bad_json'} end
+
+      if tostring(obj.addedBy) ~= tostring(ARGV[2]) then
+        return {err='forbidden'}
+      end
+
+      if ARGV[3] and ARGV[3] ~= '' then
+        if tostring(obj.id) ~= tostring(ARGV[3]) then
+          return {err='mismatch'}
+        end
+      end
+
+      local marker = '__DELETED__:' .. tostring(ARGV[2]) .. ':' .. tostring(idx) .. ':' .. tostring(redis.call('TIME')[1])
+      redis.call('LSET', KEYS[1], idx, marker)
+      redis.call('LREM', KEYS[1], 1, marker)
+      return 1
+    `;
+
+    try {
+      const res = await (redis as any).eval(
+        script,
+        1,
+        K.QUEUE,
+        String(idx),
+        String(userId),
+        expectedSongId === undefined ? '' : String(expectedSongId)
+      );
+      return res === 1;
+    } catch (err: any) {
+      const msg = String(err?.message || err);
+      if (msg.includes('invalid_index')) {
+        const e = new Error('invalid_index');
+        (e as any).code = 'invalid_index';
+        throw e;
+      }
+      if (msg.includes('forbidden')) {
+        const e = new Error('forbidden');
+        (e as any).code = 'forbidden';
+        throw e;
+      }
+      if (msg.includes('mismatch')) {
+        const e = new Error('mismatch');
+        (e as any).code = 'mismatch';
+        throw e;
+      }
+      throw err;
+    }
+  },
+
   async voteSkip(userId: string) {
     const isMember = await redis.sismember(K.SKIP_VOTES, userId);
     if (isMember) await redis.srem(K.SKIP_VOTES, userId);

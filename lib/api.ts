@@ -60,7 +60,8 @@ const API_BASE = '/api';
 export const api = {
   async getState(userId?: string): Promise<RoomState> {
     const url = userId ? `${API_BASE}/state?userId=${encodeURIComponent(userId)}` : `${API_BASE}/state`;
-    const res = await fetch(url);
+    // Ensure the client always gets the latest room state.
+    const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) throw new Error(`API Error: ${res.status}`);
     return res.json();
   },
@@ -98,6 +99,20 @@ export const api = {
       body: JSON.stringify({ songId, userId })
     });
     if (!res.ok) throw new Error('Failed to add to queue');
+  },
+
+  async removeFromQueue(index: number, userId: string, songId?: number): Promise<void> {
+    const res = await fetch(`${API_BASE}/queue`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ index, userId, songId })
+    });
+    if (!res.ok) {
+      if (res.status === 403) throw new Error('Forbidden');
+      if (res.status === 404) throw new Error('Not found');
+      if (res.status === 409) throw new Error('Queue changed');
+      throw new Error('Failed to remove from queue');
+    }
   },
 
   async voteSkip(userId: string): Promise<void> {

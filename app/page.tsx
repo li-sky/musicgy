@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { api, RoomState } from '../lib/api';
 import { generateUUID, sha256Hex } from '../lib/utils';
 import { Player } from '../components/Player';
@@ -36,9 +36,11 @@ export default function Home() {
   const [profile, setProfile] = useState<{ nickname?: string; email?: string; avatarUrl?: string } | null>(null);
   const [isAudioSyncing, setIsAudioSyncing] = useState(false);
   const [volume, setVolume] = useState(() => {
+    const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
     try {
       const saved = localStorage.getItem('musicgy_volume');
-      return saved !== null ? parseFloat(saved) : 1;
+      const parsed = saved !== null ? parseFloat(saved) : 1;
+      return Number.isFinite(parsed) ? clamp01(parsed) : 1;
     } catch (e) {
       return 1;
     }
@@ -46,30 +48,104 @@ export default function Home() {
   
   const audioRef = useRef<HTMLAudioElement>(null);
   const transitioningRef = useRef<number | null>(null);
+  const stateRef = useRef<RoomState | null>(null);
+
+  const fetchStateInFlightRef = useRef<Promise<void> | null>(null);
+  const lastStateFetchAtRef = useRef(0);
+  const scheduledStateFetchRef = useRef<number | null>(null);
+  const stateRequestSeqRef = useRef(0);
+  const stateApplySeqRef = useRef(0);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  const fetchState = useCallback(async () => {
+    if (fetchStateInFlightRef.current) return fetchStateInFlightRef.current;
+
+    const p = (async () => {
+      const requestSeq = ++stateRequestSeqRef.current;
+      try {
+        const s = await api.getState(hasStarted ? userId : undefined);
+
+        // Ignore out-of-order responses (e.g. older request returns later).
+        if (requestSeq < stateApplySeqRef.current) return;
+        stateApplySeqRef.current = requestSeq;
+
+        lastStateFetchAtRef.current = Date.now();
+
+        // If we're in an optimistic transition, only accept server state once it confirms.
+        if (transitioningRef.current) {
+          const transitionSongId = transitioningRef.current;
+          const currentSongId = stateRef.current?.currentSong?.id;
+
+          if (s.currentSong?.id === transitionSongId || s.currentSong?.id !== currentSongId) {
+            transitioningRef.current = null;
+            setState(s);
+          }
+        } else {
+          setState(s);
+        }
+
+        if (s.serverTime) setClockOffset(s.serverTime - Date.now());
+
+        try {
+          if (
+            hasStarted &&
+            Array.isArray((s as any).activeUsers) &&
+            !(s as any).activeUsers.some((u: any) => u.userId === userId)
+          ) {
+            api.joinRoom(userId, profile?.nickname || userName, connectionId).catch(() => {});
+          }
+        } catch (e) {}
+      } catch (e) {
+        console.error('Connection lost', e);
+      } finally {
+        fetchStateInFlightRef.current = null;
+      }
+    })();
+
+    fetchStateInFlightRef.current = p;
+    return p;
+  }, [hasStarted, userId, profile?.nickname, userName, connectionId]);
+
+  const refreshState = useCallback(
+    (opts?: { immediate?: boolean }) => {
+      const immediate = opts?.immediate ?? false;
+      const minGapMs = 500;
+      const now = Date.now();
+      const elapsed = now - lastStateFetchAtRef.current;
+
+      if (scheduledStateFetchRef.current !== null) {
+        if (immediate) {
+          clearTimeout(scheduledStateFetchRef.current);
+          scheduledStateFetchRef.current = null;
+        } else {
+          return;
+        }
+      }
+
+      if (immediate || elapsed >= minGapMs) {
+        fetchState();
+        return;
+      }
+
+      scheduledStateFetchRef.current = window.setTimeout(() => {
+        scheduledStateFetchRef.current = null;
+        fetchState();
+      }, minGapMs - elapsed);
+    },
+    [fetchState]
+  );
 
   // --- Effects (State, Sync, Heartbeat, Unload) ---
   // (Kept identical logic to ensure functionality remains)
 
   useEffect(() => {
-    const fetchState = async () => {
-      try {
-        const s = await api.getState(hasStarted ? userId : undefined);
-        setState(s);
-        if (s.serverTime) setClockOffset(s.serverTime - Date.now());
-
-        try {
-          if (hasStarted && Array.isArray((s as any).activeUsers) && !(s as any).activeUsers.some((u: any) => u.userId === userId)) {
-            api.joinRoom(userId, profile?.nickname || userName, connectionId).catch(() => {});
-          }
-        } catch (e) {}
-      } catch (e) {
-        console.error("Connection lost", e);
-      }
-    };
     fetchState();
     const interval = setInterval(fetchState, 3000);
     return () => clearInterval(interval);
-  }, [hasStarted, userId, connectionId]);
+  }, [fetchState]);
 
   // Client-side Pre-fetching via Service Worker
   useEffect(() => {
@@ -155,9 +231,11 @@ export default function Home() {
   // Sync volume
   useEffect(() => {
     if (audioRef.current) {
-      audioRef.current.volume = volume;
+      const uiVolume = Math.min(1, Math.max(0, volume));
+      const audioVolume = uiVolume === 0 ? 0 : Math.pow(uiVolume, 2);
+      audioRef.current.volume = audioVolume;
     }
-    localStorage.setItem('musicgy_volume', volume.toString());
+    localStorage.setItem('musicgy_volume', Math.min(1, Math.max(0, volume)).toString());
   }, [volume]);
 
   // Audio Sync Logic
@@ -276,6 +354,7 @@ export default function Home() {
 
     try {
         await api.joinRoom(userId, profile?.nickname || userName, connectionId);
+      refreshState({ immediate: true });
     } catch (e) {
         console.error("Failed to join room:", e);
     }
@@ -308,19 +387,8 @@ export default function Home() {
           }, 5000);
       }
 
-      // Immediately trigger server-side transition and sync
-      api.getState(userId).then(s => {
-          if (transitioningRef.current) {
-              if (s.currentSong?.id === transitioningRef.current || s.currentSong?.id !== state?.currentSong?.id) {
-                  transitioningRef.current = null;
-                  setState(s);
-              }
-          } else {
-              setState(s);
-          }
-      }).catch(() => {
-          transitioningRef.current = null;
-      });
+        // Immediately trigger server-side transition and sync (guarded against out-of-order responses)
+        refreshState({ immediate: true });
   };
 
   const handleAudioError = (e: any) => {
@@ -429,7 +497,10 @@ export default function Home() {
                 <Player 
                     state={state} 
                     userId={userId} 
-                    onVoteSkip={() => api.voteSkip(userId)}
+                    onVoteSkip={async () => {
+                      await api.voteSkip(userId);
+                      refreshState({ immediate: true });
+                    }}
                     onOpenSearch={() => setIsSearchOpen(true)}
                     progress={currentProgress}
                     volume={volume}
@@ -444,7 +515,9 @@ export default function Home() {
                  <Queue 
                     queue={state.queue} 
                     activeUsers={state.activeUsers || []}
+                    userId={userId}
                     onOpenSearch={() => setIsSearchOpen(true)} 
+                    onQueueChanged={() => refreshState({ immediate: true })}
                  />
              </aside>
          )}
@@ -482,7 +555,9 @@ export default function Home() {
                    <Queue 
                        queue={state.queue} 
                        activeUsers={state.activeUsers || []}
+                       userId={userId}
                        onOpenSearch={() => { setIsQueueOpen(false); setIsSearchOpen(true); }} 
+                       onQueueChanged={() => refreshState({ immediate: true })}
                    />
                </div>
           </div>
@@ -504,7 +579,10 @@ export default function Home() {
       <SearchModal 
         isOpen={isSearchOpen} 
         onClose={() => setIsSearchOpen(false)} 
-        onAdd={(id) => api.addToQueue(id, userId)} 
+        onAdd={async (id) => {
+          await api.addToQueue(id, userId);
+          refreshState({ immediate: true });
+        }} 
         userId={userId}
       />
 

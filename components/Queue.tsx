@@ -5,10 +5,12 @@ import { Song, api, UserPresence } from '../lib/api';
 interface QueueProps {
     queue: Song[];
     activeUsers: UserPresence[];
+    userId: string;
     onOpenSearch: () => void;
+    onQueueChanged: () => void;
 }
 
-export const Queue: React.FC<QueueProps> = ({ queue = [], activeUsers = [], onOpenSearch }) => {
+export const Queue: React.FC<QueueProps> = ({ queue = [], activeUsers = [], userId, onOpenSearch, onQueueChanged }) => {
   const [activeTab, setActiveTab] = useState<'queue' | 'users'>('queue');
 
   return (
@@ -70,6 +72,24 @@ export const Queue: React.FC<QueueProps> = ({ queue = [], activeUsers = [], onOp
                                 >
                                      <Icons.User />
                                 </div>
+
+                                                                {song.addedBy === userId && (
+                                                                    <button
+                                                                        onClick={async () => {
+                                                                            try {
+                                                                                await api.removeFromQueue(i, userId, song.id);
+                                                                            } catch (e) {
+                                                                            } finally {
+                                                                                onQueueChanged();
+                                                                            }
+                                                                        }}
+                                                                        className="ml-1 px-2 py-1 rounded-md text-xs text-slate-400 hover:text-white hover:bg-white/10 transition opacity-0 group-hover:opacity-100"
+                                                                        title="Remove"
+                                                                        aria-label="Remove"
+                                                                    >
+                                                                        Remove
+                                                                    </button>
+                                                                )}
                             </div>
                         ))
                     )}
