@@ -38,9 +38,12 @@ export default function Home() {
   const [volume, setVolume] = useState(() => {
     const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
     try {
-      const saved = localStorage.getItem('musicgy_volume');
-      const parsed = saved !== null ? parseFloat(saved) : 1;
-      return Number.isFinite(parsed) ? clamp01(parsed) : 1;
+      const VOLUME_UI_KEY = 'musicgy_volume_ui';
+
+      const savedUi = localStorage.getItem(VOLUME_UI_KEY);
+      const parsedUi = savedUi !== null ? parseFloat(savedUi) : NaN;
+      if (Number.isFinite(parsedUi)) return clamp01(parsedUi);
+      return 1;
     } catch (e) {
       return 1;
     }
@@ -230,12 +233,13 @@ export default function Home() {
 
   // Sync volume
   useEffect(() => {
+    const uiVolume = Math.min(1, Math.max(0, volume));
+    const audioVolume = uiVolume === 0 ? 0 : Math.pow(uiVolume, 2);
     if (audioRef.current) {
-      const uiVolume = Math.min(1, Math.max(0, volume));
-      const audioVolume = uiVolume === 0 ? 0 : Math.pow(uiVolume, 2);
       audioRef.current.volume = audioVolume;
     }
-    localStorage.setItem('musicgy_volume', Math.min(1, Math.max(0, volume)).toString());
+    const VOLUME_UI_KEY = 'musicgy_volume_ui';
+    localStorage.setItem(VOLUME_UI_KEY, uiVolume.toString());
   }, [volume]);
 
   // Audio Sync Logic
